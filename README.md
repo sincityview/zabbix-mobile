@@ -1,6 +1,6 @@
 #### Zabbix Mobile API Client
 
-** Сборка **
+**Сборка**
 ```text
 fyne-cross android -app-version 0.1.0 -app-id com.zabbix.mobile.monitor -icon icon.png
 ```
