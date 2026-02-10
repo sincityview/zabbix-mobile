@@ -29,13 +29,13 @@ jobs:
           -appBuild 1
           
       - name: Rename APK
-        run: mv *.apk zabbix-${{ github.ref_name }}.apk
+        run: mv *.apk zabbix-0.1.0.apk
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: zabbix-*.apk
-          name: Release ${{ github.ref_name }}
+          name: Release 0.1.0
           draft: false
           prerelease: false
         env:
