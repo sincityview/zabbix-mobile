@@ -22,8 +22,8 @@ jobs:
       - name: Build Android APK
         run: |
           docker run --rm -v $(pwd):/app -w /app fyneio/fyne-cross-images:android \
-          fyne-cross android -app-id com.zabbix.mobile.monitor -app-version ${GITHUB_REF_NAME#v}
-
+          fyne package -os android -app-id com.zabbix.mobile.monitor -app-version 0.1.0
+          
       - name: Rename APK
         run: mv *.apk zabbix-${{ github.ref_name }}.apk
 
