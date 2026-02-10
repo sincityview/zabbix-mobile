@@ -24,6 +24,7 @@ jobs:
           docker run --rm -v $(pwd):/app -w /app fyneio/fyne-cross-images:android \
           fyne package -os android \
           -appID com.zabbix.mobile.monitor \
+          -icon icon.png \
           -appVersion ${{ github.ref_name }} \
           -appBuild 1
           
