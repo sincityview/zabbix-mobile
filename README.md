@@ -1,8 +1,22 @@
-#### Zabbix Mobile API Client
+####  Zabbix Android Mobile API Client 
+------
+
+**Версия App**
+```text
+0.1.1
+```
+
+**Версия Go**
+```text
+1.24.6
+```
 
 **Сборка**
+Fyne 
 ```text
-fyne-cross android -app-version 0.1.0 -app-id com.zabbix.mobile.monitor -icon icon.png
+go install github.com/fyne-io/fyne-cross@latest
+
+fyne-cross android -app-version 0.1.1 -app-id com.zabbix.mobile.monitor -icon icon.png
 ```
 
 - Приложение для Android
@@ -11,3 +25,5 @@ fyne-cross android -app-version 0.1.0 -app-id com.zabbix.mobile.monitor -icon ic
 
 - TODO
   - ⊂(◉‿◉)つ
+  - Сделать карточки кликабельными
+  - Тянуть список вниз для обновления

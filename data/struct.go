@@ -1,4 +1,6 @@
-package zabbix
+package data
+
+import "encoding/json"
 
 type ZabbixRequest struct {
 	JSONRPC string         `json:"jsonrpc"`
@@ -29,7 +31,7 @@ type Host struct {
 
 type ZabbixResponse struct {
 	JSONRPC string `json:"jsonrpc"`
-	Result  jsonRawMessage `json:"result"`
+	Result json.RawMessage `json:"result"`
 	Error   *struct {
 		Code    int    `json:"code"`
 		Message string `json:"message"`
