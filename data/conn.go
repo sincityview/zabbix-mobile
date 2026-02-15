@@ -1,18 +1,18 @@
-package zabbix
+package data
 
 import (
 	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"time"
 )
 
-func DataRequestAPI() ([]Problem, error) {
-	zabbixURL := os.Getenv("ZABBIX_URL")
-	apiToken := os.Getenv("ZABBIX_TOKEN")
+func DataRequestAPI(zabbixURL, apiToken string) ([]Problem, error) {
+    if zabbixURL == "" || apiToken == "" {
+        return nil, fmt.Errorf("URL or Token not set")
+    }
 
 	if zabbixURL == "" || apiToken == "" {
 		return nil, fmt.Errorf("URL or Token not set")
@@ -119,5 +119,5 @@ func FormatTime(clock string) string {
 	if err != nil {
 		return clock
 	}
-	return time.Unix(timestamp, 0).Format("15:04:05 (02.01)")
+	return time.Unix(timestamp, 0).Format("02.01 15:04:05")
 }

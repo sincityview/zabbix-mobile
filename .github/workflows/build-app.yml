@@ -18,10 +18,12 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24.6'
+          go-version: '1.24'
 
-      - name: Install Fyne CLI
-        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+      - name: Set version
+        id: set_version
+        run: |
+          echo "VERSION=0.2.0" >> $GITHUB_OUTPUT
 
       - name: Build Android APK
         run: |
@@ -29,18 +31,25 @@ jobs:
           fyne package -os android \
           -appID com.zabbix.mobile.monitor \
           -icon icon.png \
-          -appVersion 0.1.0 \
-          -appBuild 1
-          
-      - name: Rename APK
-        run: mv *.apk zabbix-0.1.0.apk
+          -appVersion "${{ steps.set_version.outputs.VERSION }}" \
+          -appBuild ${{ github.run_number }}
+          sudo chown -R $USER:$USER .
+
+      - name: Sign APK manually
+        run: |
+          BUILD_TOOLS=$ANDROID_HOME/build-tools/34.0.0
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > release.jks
+          $BUILD_TOOLS/zipalign -v 4 zabbix.apk zabbix-aligned.apk
+          $BUILD_TOOLS/apksigner sign --ks release.jks \
+            --ks-key-alias ${{ secrets.ANDROID_KEY_ALIAS }} \
+            --ks-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
+            --key-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
+            --out zabbix-${{ steps.set_version.outputs.VERSION }}.apk zabbix-aligned.apk
+          $BUILD_TOOLS/apksigner verify zabbix-${{ steps.set_version.outputs.VERSION }}.apk
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
-          files: zabbix-*.apk
-          name: Release 0.1.0
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          files: zabbix-${{ steps.set_version.outputs.VERSION }}.apk
+          name: Release ${{ steps.set_version.outputs.VERSION }}
+          tag_name: ${{ github.ref_name }}

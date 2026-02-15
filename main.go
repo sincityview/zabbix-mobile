@@ -2,19 +2,39 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	"zabbix/internal/zabbix"
+	"image/color"
+	"fyne.io/fyne/v2/canvas"
+
+	"zabbix/data" 
 )
+
+func getSeverityColor(severity string) color.Color {
+	switch severity {
+	case "5":
+		return color.RGBA{R: 220, G: 0, B: 0, A: 255}
+	case "4":
+		return color.RGBA{R: 255, G: 153, B: 0, A: 255}
+	case "3":
+		return color.RGBA{R: 255, G: 255, B: 0, A: 255}
+	case "2":
+		return color.RGBA{R: 255, G: 200, B: 100, A: 255}
+	case "1":
+		return color.RGBA{R: 100, G: 150, B: 255, A: 255}
+	default:
+		return theme.ForegroundColor()
+	}
+}
 
 func main() {
 	myApp := app.NewWithID("com.zabbix.mobile.monitor")
@@ -29,15 +49,15 @@ func main() {
 	window := myApp.NewWindow("Zabbix Monitor")
 	window.Resize(fyne.NewSize(450, 650))
 
-	os.Setenv("ZABBIX_URL", myApp.Preferences().String("ZABBIX_URL"))
-	os.Setenv("ZABBIX_TOKEN", myApp.Preferences().String("ZABBIX_TOKEN"))
+	statusBind := binding.NewString()
+	statusBind.Set("Проблем: 0")
 
-	statusLabel := widget.NewLabel("Проблем: 0")
+	statusLabel := widget.NewLabelWithData(statusBind)
 	statusLabel.TextStyle = fyne.TextStyle{Bold: true}
 
-	richText := widget.NewRichText()
-	richText.Wrapping = fyne.TextWrapWord
-	scroll := container.NewVScroll(richText)
+	problemsContainer := container.NewVBox()
+	scroll := container.NewVScroll(problemsContainer)
+	scroll.SetMinSize(fyne.NewSize(400, 500)) 
 	scroll.Hide()
 
 	welcomeText := widget.NewRichText(&widget.TextSegment{
@@ -48,43 +68,71 @@ func main() {
 	mainStack := container.NewStack(centeredWelcome, scroll)
 
 	refreshFunc := func() {
-		centeredWelcome.Hide()
-		scroll.Show()
+		u := myApp.Preferences().String("ZABBIX_URL")
+		t := myApp.Preferences().String("ZABBIX_TOKEN")
+
+		if u == "" || t == "" {
+			statusBind.Set("Настройте URL и Токен")
+			return
+		}
+
 		go func() {
-			problems, err := zabbix.DataRequestAPI()
+			problems, err := data.DataRequestAPI(u, t)
 			if err != nil {
-				statusLabel.SetText("Ошибка API")
-			} else {
-				statusLabel.SetText(fmt.Sprintf("Проблем: %d", len(problems)))
-				var segments []widget.RichTextSegment
+				statusBind.Set("Ошибка API")
+				return
+			}
+
+			fyne.Do(func() {
+				centeredWelcome.Hide()
+				scroll.Show()
+
+				problemsContainer.Objects = nil 
+				statusBind.Set(fmt.Sprintf("Проблем: %d", len(problems)))
+
 				if len(problems) == 0 {
-					segments = append(segments, &widget.TextSegment{Text: "✅ Все системы в норме!", Style: widget.RichTextStyle{ColorName: theme.ColorNameSuccess}})
+					problemsContainer.Add(widget.NewLabelWithStyle("✅ Все системы в норме!", 
+						fyne.TextAlignCenter, fyne.TextStyle{Bold: true}))
 				} else {
-					for i, p := range problems {
-						if i > 0 { segments = append(segments, &widget.SeparatorSegment{}) }
-						segments = append(segments, &widget.TextSegment{Text: "\n" + zabbix.FormatTime(p.Clock) + "\n", Style: widget.RichTextStyleStrong})
-						segments = append(segments, &widget.TextSegment{Text: p.HostName + "\n", Style: widget.RichTextStyleStrong})
-						segments = append(segments, &widget.TextSegment{Text: p.Name + "\n", Style: widget.RichTextStyle{ColorName: theme.ColorNameWarning}})
+					for _, p := range problems {
+						line := canvas.NewRectangle(getSeverityColor(p.Severity))
+						line.SetMinSize(fyne.NewSize(6, 0)) 
+
+						hostLabel := widget.NewLabelWithStyle(p.HostName, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+						hostLabel.Wrapping = fyne.TextWrapWord
+
+						problemLabel := widget.NewLabel(p.Name)
+						problemLabel.Wrapping = fyne.TextWrapWord
+						
+						timeLabel := widget.NewLabelWithStyle(data.FormatTime(p.Clock), fyne.TextAlignLeading, fyne.TextStyle{Italic: true})
+
+						cardContent := container.NewVBox(timeLabel, hostLabel, problemLabel)
+						
+						paddedContent := container.NewPadded(cardContent)
+
+						card := container.NewBorder(nil, nil, line, nil, paddedContent)
+
+						problemsContainer.Add(card)
+						problemsContainer.Add(widget.NewSeparator())
 					}
 				}
-				richText.Segments = segments
-				richText.Refresh()
-			}
+				
+				problemsContainer.Refresh()
+				scroll.Refresh()
+			})
 		}()
 	}
 
 	settingsBtn := widget.NewButtonWithIcon("", theme.SettingsIcon(), func() {
 		urlEntry := widget.NewEntry()
 		urlEntry.Text = myApp.Preferences().String("ZABBIX_URL")
-		
 		tokenEntry := widget.NewPasswordEntry()
 		tokenEntry.Text = myApp.Preferences().String("ZABBIX_TOKEN")
-
 		intervalEntry := widget.NewEntry()
 		intervalEntry.Text = myApp.Preferences().StringWithFallback("REFRESH_INTERVAL", "60")
 
 		themeSelect := widget.NewSelect([]string{"Dark", "Light"}, nil)
-		if myApp.Preferences().StringWithFallback("THEME", "dark") == "light" {
+		if myApp.Preferences().String("THEME") == "light" {
 			themeSelect.SetSelected("Light")
 		} else {
 			themeSelect.SetSelected("Dark")
@@ -103,9 +151,6 @@ func main() {
 				myApp.Preferences().SetString("ZABBIX_TOKEN", tokenEntry.Text)
 				myApp.Preferences().SetString("REFRESH_INTERVAL", intervalEntry.Text)
 				
-				os.Setenv("ZABBIX_URL", urlEntry.Text)
-				os.Setenv("ZABBIX_TOKEN", tokenEntry.Text)
-
 				if themeSelect.Selected == "Light" {
 					myApp.Settings().SetTheme(theme.LightTheme())
 					myApp.Preferences().SetString("THEME", "light")
@@ -113,6 +158,7 @@ func main() {
 					myApp.Settings().SetTheme(theme.DarkTheme())
 					myApp.Preferences().SetString("THEME", "dark")
 				}
+				refreshFunc()
 			}
 		}, window)
 		d.Resize(fyne.NewSize(400, 350))
