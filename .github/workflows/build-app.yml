@@ -20,18 +20,13 @@ jobs:
         with:
           go-version: '1.24'
 
-      - name: Set version
-        id: set_version
-        run: |
-          echo "VERSION=0.2.0" >> $GITHUB_OUTPUT
-
       - name: Build Android APK
         run: |
           docker run --rm -v $(pwd):/app -w /app fyneio/fyne-cross-images:android \
           fyne package -os android \
           -appID com.zabbix.mobile.monitor \
           -icon icon.png \
-          -appVersion "${{ steps.set_version.outputs.VERSION }}" \
+          -appVersion "0.2.0" \
           -appBuild ${{ github.run_number }}
           sudo chown -R $USER:$USER .
 
@@ -44,12 +39,12 @@ jobs:
             --ks-key-alias ${{ secrets.ANDROID_KEY_ALIAS }} \
             --ks-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
             --key-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
-            --out zabbix-${{ steps.set_version.outputs.VERSION }}.apk zabbix-aligned.apk
-          $BUILD_TOOLS/apksigner verify zabbix-${{ steps.set_version.outputs.VERSION }}.apk
+            --out zabbix-0.2.0.apk zabbix-aligned.apk
+          $BUILD_TOOLS/apksigner verify zabbix-0.2.0.apk
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: zabbix-${{ steps.set_version.outputs.VERSION }}.apk
-          name: Release ${{ steps.set_version.outputs.VERSION }}
+          files: zabbix-0.2.0.apk
+          name: Release 0.2.0
           tag_name: ${{ github.ref_name }}
