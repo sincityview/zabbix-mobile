@@ -31,7 +31,7 @@ jobs:
           fyne package -os android \
           -appID com.zabbix.mobile.monitor \
           -icon icon.png \
-          -appVersion "${{ steps.get_version.outputs.VERSION }}" \
+          -appVersion "${{ steps.set_version.outputs.VERSION }}" \
           -appBuild ${{ github.run_number }}
           sudo chown -R $USER:$USER .
 
@@ -44,12 +44,12 @@ jobs:
             --ks-key-alias ${{ secrets.ANDROID_KEY_ALIAS }} \
             --ks-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
             --key-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
-            --out zabbix-${{ steps.get_version.outputs.VERSION }}.apk zabbix-aligned.apk
-          $BUILD_TOOLS/apksigner verify zabbix-${{ steps.get_version.outputs.VERSION }}.apk
+            --out zabbix-${{ steps.set_version.outputs.VERSION }}.apk zabbix-aligned.apk
+          $BUILD_TOOLS/apksigner verify zabbix-${{ steps.set_version.outputs.VERSION }}.apk
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: zabbix-${{ steps.get_version.outputs.VERSION }}.apk
-          name: Release ${{ steps.get_version.outputs.VERSION }}
+          files: zabbix-${{ steps.set_version.outputs.VERSION }}.apk
+          name: Release ${{ steps.set_version.outputs.VERSION }}
           tag_name: ${{ github.ref_name }}
