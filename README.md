@@ -3,7 +3,7 @@
 
 **Версия App**
 ```text
-0.2.0
+v0.3
 ```
 
 **Версия Go**
@@ -15,7 +15,7 @@
 ```text
 go install github.com/fyne-io/fyne-cross@latest
 
-fyne-cross android -app-version 0.2.0 -app-id com.zabbix.mobile.monitor -icon icon.png
+fyne-cross android -app-version v0.3 -app-id com.zabbix.mobile.monitor -icon icon.png
 ```
 
 - Приложение для Android
@@ -24,6 +24,3 @@ fyne-cross android -app-version 0.2.0 -app-id com.zabbix.mobile.monitor -icon ic
 
 - TODO
   - ⊂(◉‿◉)つ
-  - Сделать карточки кликабельными
-  - Тянуть список вниз для обновления
-  - Языковый пакет RU / EN

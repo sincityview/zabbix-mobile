@@ -1,0 +1,8 @@
+/status
+hi
+/models
+/model list
+напиши небольшое TODO для создания web-app kanban go+html+js+sqlite
+$ go run .
+# kanban
+./main.go:39:39: syntax error: unexpected literal 8080, expected )
