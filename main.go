@@ -20,10 +20,6 @@ import (
 	"zabbix/data"
 )
 
-var (
-	problemsData []data.Problem
-)
-
 func getSeverityColor(severity string) color.Color {
 	switch severity {
 	case "5": // Disaster
@@ -41,11 +37,32 @@ func getSeverityColor(severity string) color.Color {
 	}
 }
 
-func main() {
-	myApp := app.NewWithID("com.zabbix.android.monitor")
+func createProblemWidget(p data.Problem) fyne.CanvasObject {
+	line := canvas.NewRectangle(getSeverityColor(p.Severity))
+	line.SetMinSize(fyne.NewSize(6, 0))
 
-	currentTheme := myApp.Preferences().StringWithFallback("THEME", "dark")
-	if currentTheme == "light" {
+	timeLabel := widget.NewLabel(data.FormatTime(p.Clock))
+	timeLabel.TextStyle = fyne.TextStyle{Italic: true}
+
+	hostLabel := widget.NewLabel(p.HostName)
+	hostLabel.TextStyle = fyne.TextStyle{Bold: true}
+	hostLabel.Wrapping = fyne.TextWrapWord
+
+	problemLabel := widget.NewLabel(p.Name)
+	problemLabel.Wrapping = fyne.TextWrapWord
+
+	vbox := container.New(layout.NewVBoxLayout(), timeLabel, hostLabel, problemLabel)
+
+	content := container.NewBorder(nil, nil, line, nil, container.NewPadded(vbox))
+
+	return container.NewVBox(content, widget.NewSeparator())
+}
+
+func main() {
+	myApp := app.NewWithID("com.zabbix.mobile.monitor")
+
+	currentThemePref := myApp.Preferences().StringWithFallback("THEME", "dark")
+	if currentThemePref == "light" {
 		myApp.Settings().SetTheme(theme.LightTheme())
 	} else {
 		myApp.Settings().SetTheme(theme.DarkTheme())
@@ -60,65 +77,8 @@ func main() {
 	statusLabel := widget.NewLabelWithData(statusBind)
 	statusLabel.TextStyle = fyne.TextStyle{Bold: true}
 
-	list := widget.NewList(
-		func() int {
-			return len(problemsData)
-		},
-		func() fyne.CanvasObject {
-			line := canvas.NewRectangle(color.White)
-			line.SetMinSize(fyne.NewSize(6, 0))
-
-			timeLabel := widget.NewLabel("")
-			timeLabel.TextStyle = fyne.TextStyle{Italic: true}
-
-			hostLabel := widget.NewLabel("")
-			hostLabel.TextStyle = fyne.TextStyle{Bold: true}
-			hostLabel.Wrapping = fyne.TextWrapWord
-
-			problemLabel := widget.NewLabel("")
-			problemLabel.Wrapping = fyne.TextWrapWord
-
-			cardContent := container.NewVBox(timeLabel, hostLabel, problemLabel)
-
-			paddedContent := container.NewPadded(cardContent)
-
-			return container.NewBorder(nil, nil, line, nil, paddedContent)
-		},
-		func(id widget.ListItemID, obj fyne.CanvasObject) {
-			if id >= len(problemsData) {
-				return
-			}
-			p := problemsData[id]
-
-			root := obj.(*fyne.Container)
-
-			var line *canvas.Rectangle
-			var vbox *fyne.Container
-
-			for _, o := range root.Objects {
-				if r, ok := o.(*canvas.Rectangle); ok {
-					line = r
-				} else if c, ok := o.(*fyne.Container); ok {
-					if len(c.Objects) > 0 {
-						if v, ok := c.Objects[0].(*fyne.Container); ok {
-							vbox = v
-						}
-					}
-				}
-			}
-
-			if line != nil {
-				line.FillColor = getSeverityColor(p.Severity)
-				line.Refresh()
-			}
-
-			if vbox != nil && len(vbox.Objects) >= 3 {
-				vbox.Objects[0].(*widget.Label).SetText(data.FormatTime(p.Clock))
-				vbox.Objects[1].(*widget.Label).SetText(p.HostName)
-				vbox.Objects[2].(*widget.Label).SetText(p.Name)
-			}
-		},
-	)
+	problemsContainer := container.NewVBox()
+	scrollContainer := container.NewVScroll(problemsContainer)
 
 	welcomeText := widget.NewRichText(&widget.TextSegment{
 		Text:  "Ожидание данных...",
@@ -126,7 +86,7 @@ func main() {
 	})
 	centeredWelcome := container.NewCenter(welcomeText)
 
-	mainStack := container.NewStack(centeredWelcome, list)
+	mainStack := container.NewStack(centeredWelcome, scrollContainer)
 
 	refreshFunc := func() {
 		u := myApp.Preferences().String("ZABBIX_URL")
@@ -145,23 +105,26 @@ func main() {
 			}
 
 			fyne.Do(func() {
-				problemsData = problems
-				list.Refresh()
-
-				statusBind.Set(fmt.Sprintf("Проблем: %d", len(problems)))
+				problemsContainer.Objects = nil
 
 				if len(problems) > 0 {
+					for _, p := range problems {
+						problemsContainer.Add(createProblemWidget(p))
+					}
 					centeredWelcome.Hide()
-					list.Show()
+					scrollContainer.Show()
 				} else {
 					welcomeText.Segments = []widget.RichTextSegment{&widget.TextSegment{
 						Text:  "Все системы в норме!",
 						Style: widget.RichTextStyle{Alignment: fyne.TextAlignCenter},
 					}}
 					welcomeText.Refresh()
-					list.Hide()
+					scrollContainer.Hide()
 					centeredWelcome.Show()
 				}
+
+				problemsContainer.Refresh()
+				statusBind.Set(fmt.Sprintf("Проблем: %d", len(problems)))
 			})
 		}()
 	}
