@@ -35,7 +35,7 @@ jobs:
           sudo chown -R $USER:$USER .
 
       - name: Sign APK
-          run: |
+        run: |
           BUILD_TOOLS=$ANDROID_HOME/build-tools/34.0.0
           VERSION=${{ steps.get_version.outputs.VERSION }}
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > release.jks
