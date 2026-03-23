@@ -10,31 +10,26 @@ import (
 )
 
 func DataRequestAPI(zabbixURL, apiToken string) ([]Problem, error) {
-    if zabbixURL == "" || apiToken == "" {
-        return nil, fmt.Errorf("URL or Token not set")
-    }
-
 	if zabbixURL == "" || apiToken == "" {
-		return nil, fmt.Errorf("URL or Token not set")
+		return nil, fmt.Errorf("URL или Токен не настроены")
 	}
 
 	reqProblem := ZabbixRequest{
 		JSONRPC: "2.0",
 		Method:  "problem.get",
 		Params: map[string]any{
-			"output":      []string{"eventid", "name", "clock", "severity", "objectid"},
-			"sortfield":   []string{"eventid"},
-			"sortorder":   "DESC",
-			"suppressed":  false,
-			"recent":      true,
+			"output":     []string{"eventid", "name", "clock", "severity", "objectid"},
+			"sortfield":  []string{"eventid"},
+			"sortorder":  "DESC",
+			"suppressed": false,
+			"recent":     true,
 		},
 		Auth: apiToken,
 		ID:   1,
 	}
 
 	var problems []Problem
-	err := apiCall(zabbixURL, reqProblem, &problems)
-	if err != nil {
+	if err := apiCall(zabbixURL, reqProblem, &problems); err != nil {
 		return nil, err
 	}
 
@@ -54,17 +49,13 @@ func DataRequestAPI(zabbixURL, apiToken string) ([]Problem, error) {
 			"triggerids":  triggerIDs,
 			"selectHosts": []string{"name"},
 			"output":      []string{"triggerid"},
-			"filter": map[string]any{
-				"status": 0,
-			},
 		},
 		Auth: apiToken,
 		ID:   2,
 	}
 
 	var triggers []Trigger
-	err = apiCall(zabbixURL, reqTriggers, &triggers)
-	if err != nil {
+	if err := apiCall(zabbixURL, reqTriggers, &triggers); err != nil {
 		return problems, nil
 	}
 
@@ -87,31 +78,31 @@ func DataRequestAPI(zabbixURL, apiToken string) ([]Problem, error) {
 }
 
 func apiCall(url string, request interface{}, target interface{}) error {
-    data, err := json.Marshal(request)
-    if err != nil {
-        return err
-    }
-    
-    resp, err := http.Post(url, "application/json", bytes.NewBuffer(data))
-    if err != nil {
-        return err
-    }
-    defer resp.Body.Close()
+	data, err := json.Marshal(request)
+	if err != nil {
+		return err
+	}
 
-    var zResp struct {
-        Result json.RawMessage `json:"result"`
-        Error  interface{}     `json:"error"`
-    }
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(data))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
 
-    if err := json.NewDecoder(resp.Body).Decode(&zResp); err != nil {
-        return err
-    }
+	var zResp struct {
+		Result json.RawMessage `json:"result"`
+		Error  interface{}     `json:"error"`
+	}
 
-    if zResp.Error != nil {
-        return fmt.Errorf("Zabbix API Error: %v", zResp.Error)
-    }
+	if err := json.NewDecoder(resp.Body).Decode(&zResp); err != nil {
+		return err
+	}
 
-    return json.Unmarshal(zResp.Result, target)
+	if zResp.Error != nil {
+		return fmt.Errorf("Zabbix API Error: %v", zResp.Error)
+	}
+
+	return json.Unmarshal(zResp.Result, target)
 }
 
 func FormatTime(clock string) string {

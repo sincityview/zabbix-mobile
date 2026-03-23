@@ -1,6 +1,8 @@
 package data
 
-import "encoding/json"
+import (
+	"encoding/json"
+)
 
 type ZabbixRequest struct {
 	JSONRPC string         `json:"jsonrpc"`
@@ -30,8 +32,8 @@ type Host struct {
 }
 
 type ZabbixResponse struct {
-	JSONRPC string `json:"jsonrpc"`
-	Result json.RawMessage `json:"result"`
+	JSONRPC string          `json:"jsonrpc"`
+	Result  json.RawMessage `json:"result"`
 	Error   *struct {
 		Code    int    `json:"code"`
 		Message string `json:"message"`
@@ -39,4 +41,5 @@ type ZabbixResponse struct {
 }
 
 type jsonRawMessage []byte
+
 func (m *jsonRawMessage) UnmarshalJSON(data []byte) error { *m = data; return nil }

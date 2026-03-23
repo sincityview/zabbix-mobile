@@ -15,36 +15,41 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Go
+      - name: Extract version
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Set up golang
         uses: actions/setup-go@v5
         with:
           go-version: '1.24'
 
-      - name: Build Android APK
+      - name: Build APK
         run: |
           docker run --rm -v $(pwd):/app -w /app fyneio/fyne-cross-images:android \
           fyne package -os android \
           -appID com.zabbix.mobile.monitor \
           -icon icon.png \
-          -appVersion "0.2.0" \
+          -appVersion "${{ steps.get_version.outputs.VERSION }}" \
           -appBuild ${{ github.run_number }}
           sudo chown -R $USER:$USER .
 
-      - name: Sign APK manually
+      - name: Sign APK
         run: |
           BUILD_TOOLS=$ANDROID_HOME/build-tools/34.0.0
+          VERSION=${{ steps.get_version.outputs.VERSION }}
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > release.jks
           $BUILD_TOOLS/zipalign -v 4 zabbix.apk zabbix-aligned.apk
           $BUILD_TOOLS/apksigner sign --ks release.jks \
             --ks-key-alias ${{ secrets.ANDROID_KEY_ALIAS }} \
             --ks-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
             --key-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
-            --out zabbix-0.2.0.apk zabbix-aligned.apk
-          $BUILD_TOOLS/apksigner verify zabbix-0.2.0.apk
+            --out "zabbix-$VERSION.apk" zabbix-aligned.apk
+          $BUILD_TOOLS/apksigner verify "zabbix-$VERSION.apk"
 
-      - name: Create Release
+      - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          files: zabbix-0.2.0.apk
-          name: Release 0.2.0
+          files: zabbix-${{ steps.get_version.outputs.VERSION }}.apk
+          name: Release ${{ steps.get_version.outputs.VERSION }}
           tag_name: ${{ github.ref_name }}
