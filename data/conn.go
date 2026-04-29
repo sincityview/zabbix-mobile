@@ -2,8 +2,10 @@ package data
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"fyne.io/fyne/v2"
 	"net/http"
 	"strconv"
 	"time"
@@ -14,11 +16,21 @@ func DataRequestAPI(zabbixURL, apiToken string) ([]Problem, error) {
 		return nil, fmt.Errorf("URL или Токен не настроены")
 	}
 
+	limitStr := "200"
+	if app := fyne.CurrentApp(); app != nil {
+		limitStr = app.Preferences().StringWithFallback("PROBLEM_LIMIT", "200")
+	}
+
+	limit := 0
+	if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+		limit = l
+	}
+
 	reqProblem := ZabbixRequest{
 		JSONRPC: "2.0",
 		Method:  "problem.get",
 		Params: map[string]any{
-			"output":     []string{"eventid", "name", "clock", "severity", "objectid"},
+			"output":     []string{"eventid", "name", "clock", "severity", "objectid", "acknowledged"},
 			"sortfield":  []string{"eventid"},
 			"sortorder":  "DESC",
 			"suppressed": false,
@@ -26,6 +38,10 @@ func DataRequestAPI(zabbixURL, apiToken string) ([]Problem, error) {
 		},
 		Auth: apiToken,
 		ID:   1,
+	}
+
+	if limit > 0 {
+		reqProblem.Params["limit"] = limit
 	}
 
 	var problems []Problem
@@ -83,7 +99,21 @@ func apiCall(url string, request interface{}, target interface{}) error {
 		return err
 	}
 
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(data))
+	selfSigned := false
+	if app := fyne.CurrentApp(); app != nil {
+		selfSigned = app.Preferences().BoolWithFallback("SELF_SIGNED", false)
+	}
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: selfSigned,
+			},
+		},
+		Timeout: 30 * time.Second,
+	}
+
+	resp, err := client.Post(url, "application/json", bytes.NewBuffer(data))
 	if err != nil {
 		return err
 	}

@@ -12,7 +12,6 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -22,6 +21,7 @@ import (
 
 var (
 	problemsData []data.Problem
+	refreshBtn   *widget.Button
 )
 
 func getSeverityColor(severity string) color.Color {
@@ -51,7 +51,7 @@ func main() {
 		myApp.Settings().SetTheme(theme.DarkTheme())
 	}
 
-	window := myApp.NewWindow("Zabbix Monitor")
+	window := myApp.NewWindow(data.Tr("app_title"))
 	window.Resize(fyne.NewSize(450, 650))
 
 	statusBind := binding.NewString()
@@ -121,7 +121,7 @@ func main() {
 	)
 
 	welcomeText := widget.NewRichText(&widget.TextSegment{
-		Text:  "Ожидание данных...",
+		Text:  data.Tr("waiting_data"),
 		Style: widget.RichTextStyle{Alignment: fyne.TextAlignCenter, TextStyle: fyne.TextStyle{Bold: true}},
 	})
 	centeredWelcome := container.NewCenter(welcomeText)
@@ -133,14 +133,14 @@ func main() {
 		t := myApp.Preferences().String("ZABBIX_TOKEN")
 
 		if u == "" || t == "" {
-			statusBind.Set("Настройте сервер")
+			statusBind.Set(data.Tr("configure_server"))
 			return
 		}
 
 		go func() {
 			problems, err := data.DataRequestAPI(u, t)
 			if err != nil {
-				statusBind.Set("Ошибка API")
+				statusBind.Set(data.Tr("api_error"))
 				return
 			}
 
@@ -148,14 +148,14 @@ func main() {
 				problemsData = problems
 				list.Refresh()
 
-				statusBind.Set(fmt.Sprintf("Проблем: %d", len(problems)))
+				statusBind.Set(fmt.Sprintf(data.Tr("problems_count"), len(problems)))
 
 				if len(problems) > 0 {
 					centeredWelcome.Hide()
 					list.Show()
 				} else {
 					welcomeText.Segments = []widget.RichTextSegment{&widget.TextSegment{
-						Text:  "Все системы в норме!",
+						Text:  data.Tr("all_good"),
 						Style: widget.RichTextStyle{Alignment: fyne.TextAlignCenter},
 					}}
 					welcomeText.Refresh()
@@ -167,12 +167,26 @@ func main() {
 	}
 
 	settingsBtn := widget.NewButtonWithIcon("", theme.SettingsIcon(), func() {
+		settingsWindow := fyne.CurrentApp().NewWindow(data.Tr("settings"))
+		settingsWindow.Resize(fyne.NewSize(440, 680))
+		settingsWindow.CenterOnScreen()
+
 		urlEntry := widget.NewEntry()
 		urlEntry.Text = myApp.Preferences().String("ZABBIX_URL")
+		urlEntry.SetPlaceHolder("")
+
 		tokenEntry := widget.NewPasswordEntry()
 		tokenEntry.Text = myApp.Preferences().String("ZABBIX_TOKEN")
+		urlEntry.SetPlaceHolder("")
+
+		selfSignedCheck := widget.NewCheck(data.Tr("self_signed"), nil)
+		selfSignedCheck.SetChecked(myApp.Preferences().BoolWithFallback("SELF_SIGNED", false))
+
 		intervalEntry := widget.NewEntry()
 		intervalEntry.Text = myApp.Preferences().StringWithFallback("REFRESH_INTERVAL", "60")
+
+		limitEntry := widget.NewEntry()
+		limitEntry.Text = myApp.Preferences().StringWithFallback("PROBLEM_LIMIT", "200")
 
 		themeSelect := widget.NewSelect([]string{"Dark", "Light"}, nil)
 		themeSelect.SetSelected("Dark")
@@ -180,31 +194,73 @@ func main() {
 			themeSelect.SetSelected("Light")
 		}
 
-		form := widget.NewForm(
-			widget.NewFormItem("URL сервера", urlEntry),
-			widget.NewFormItem("Токен", tokenEntry),
-			widget.NewFormItem("Интервал (сек)", intervalEntry),
-			widget.NewFormItem("Тема", themeSelect),
+		langOptions := []string{"Русский", "English"}
+		langSelect := widget.NewSelect(langOptions, nil)
+		if data.CurrentLang == "en" {
+			langSelect.SetSelected("English")
+		} else {
+			langSelect.SetSelected("Русский")
+		}
+
+		formContent := container.NewVBox(
+			widget.NewLabel(data.Tr("url_server")),
+			urlEntry,
+			widget.NewLabel(data.Tr("token")),
+			tokenEntry,
+			selfSignedCheck,
+			widget.NewLabel(data.Tr("refresh_interval")),
+			intervalEntry,
+			widget.NewLabel(data.Tr("problem_limit")),
+			limitEntry,
+			widget.NewLabel(data.Tr("theme")),
+			themeSelect,
+			widget.NewLabel(data.Tr("language")),
+			langSelect,
 		)
 
-		d := dialog.NewCustomConfirm("Настройки", "Сохранить", "Отмена", form, func(confirm bool) {
-			if confirm {
-				myApp.Preferences().SetString("ZABBIX_URL", urlEntry.Text)
-				myApp.Preferences().SetString("ZABBIX_TOKEN", tokenEntry.Text)
-				myApp.Preferences().SetString("REFRESH_INTERVAL", intervalEntry.Text)
+		cancelBtn := widget.NewButton(data.Tr("cancel"), func() {
+			settingsWindow.Close()
+		})
 
-				if themeSelect.Selected == "Light" {
-					myApp.Settings().SetTheme(theme.LightTheme())
-					myApp.Preferences().SetString("THEME", "light")
-				} else {
-					myApp.Settings().SetTheme(theme.DarkTheme())
-					myApp.Preferences().SetString("THEME", "dark")
-				}
-				refreshFunc()
+		saveBtn := widget.NewButton(data.Tr("save"), func() {
+			myApp.Preferences().SetString("ZABBIX_URL", urlEntry.Text)
+			myApp.Preferences().SetString("ZABBIX_TOKEN", tokenEntry.Text)
+			myApp.Preferences().SetBool("SELF_SIGNED", selfSignedCheck.Checked)
+			myApp.Preferences().SetString("REFRESH_INTERVAL", intervalEntry.Text)
+			myApp.Preferences().SetString("PROBLEM_LIMIT", limitEntry.Text)
+
+			if langSelect.Selected == "English" {
+				data.CurrentLang = "en"
+			} else {
+				data.CurrentLang = "ru"
 			}
-		}, window)
-		d.Resize(fyne.NewSize(400, 350))
-		d.Show()
+
+			if themeSelect.Selected == "Light" {
+				myApp.Settings().SetTheme(theme.LightTheme())
+				myApp.Preferences().SetString("THEME", "light")
+			} else {
+				myApp.Settings().SetTheme(theme.DarkTheme())
+				myApp.Preferences().SetString("THEME", "dark")
+			}
+
+			if refreshBtn != nil {
+				refreshBtn.SetText(data.Tr("update"))
+			}
+
+			settingsWindow.Close()
+			refreshFunc()
+		})
+
+		buttons := container.NewGridWithColumns(2, cancelBtn, saveBtn)
+
+		content := container.NewBorder(
+			formContent,
+			buttons,
+			nil, nil, nil,
+		)
+
+		settingsWindow.SetContent(container.NewPadded(content))
+		settingsWindow.Show()
 	})
 
 	go func() {
@@ -219,7 +275,7 @@ func main() {
 		}
 	}()
 
-	refreshBtn := widget.NewButtonWithIcon("Обновить", theme.ViewRefreshIcon(), refreshFunc)
+	refreshBtn = widget.NewButtonWithIcon(data.Tr("update"), theme.ViewRefreshIcon(), refreshFunc)
 
 	topBar := container.NewHBox(statusLabel, layout.NewSpacer(), settingsBtn)
 	content := container.NewBorder(

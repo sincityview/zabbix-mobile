@@ -1,9 +1,9 @@
-####  Zabbix Android Mobile API Client 
+####  Zabbix Android API Client 
 ------
 
 **Версия App**
 ```text
-v0.3
+v0.4
 ```
 
 **Версия Go**
@@ -15,7 +15,7 @@ v0.3
 ```text
 go install github.com/fyne-io/fyne-cross@latest
 
-fyne-cross android -app-version v0.3 -app-id com.zabbix.mobile.monitor -icon icon.png
+fyne-cross android -app-version 0.3 -app-id com.zabbix.mobile.monitor -icon icon.png
 ```
 
 - Приложение для Android
