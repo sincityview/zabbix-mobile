@@ -15,7 +15,7 @@ v0.4
 ```text
 go install github.com/fyne-io/fyne-cross@latest
 
-fyne-cross android -app-version 0.3 -app-id com.zabbix.mobile.monitor -icon icon.png
+fyne-cross android -app-version 0.4 -app-id com.zabbix.mobile.monitor -icon icon.png
 ```
 
 - Приложение для Android
