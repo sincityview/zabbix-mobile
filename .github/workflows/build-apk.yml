@@ -25,26 +25,10 @@ jobs:
           go-version: '1.24'
           cache: true
 
-      - name: Cache fyne-cross images
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.fyne-cross/cache
-            ~/.cache/fyne-cross
-          key: fyne-cross-${{ runner.os }}
-
       - name: Install fyne-cross
         run: go install github.com/fyne-io/fyne-cross@latest
 
-      - name: Cache Go modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/go/pkg/mod
-            ${{ github.workspace }}/go.sum
-          key: go-mod-${{ hashFiles('**/go.sum') }}
-
-      - name: Build APK (arm64 + amd64)
+      - name: Build APK
         run: |
           fyne-cross android \
             -app-id com.zabbix.mobile.monitor \
@@ -52,13 +36,7 @@ jobs:
             -app-version "${{ steps.get_version.outputs.VERSION }}" \
             -app-build ${{ github.run_number }} \
             -ldflags "-s -w" \
-            -strip \
-            -arch arm64,amd64
-
-      - name: Copy APK for signing
-        run: |
-          cp fyne-cross/dist/android/*/zabbix.apk zabbix-unsigned.apk 2>/dev/null || \
-          cp fyne-cross/dist/android/zabbix.apk zabbix-unsigned.apk
+            -name zabbix
 
       - name: Set up Java for Android SDK
         uses: actions/setup-java@v4
@@ -72,9 +50,8 @@ jobs:
       - name: Sign APK
         run: |
           VERSION=${{ steps.get_version.outputs.VERSION }}
-          BUILD_TOOLS=$ANDROID_HOME/build-tools/*/
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > release.jks
-          zipalign -v -p 4 zabbix-unsigned.apk zabbix-aligned.apk
+          zipalign -v -p 4 fyne-cross/dist/android/zabbix.apk zabbix-aligned.apk
           apksigner sign --ks release.jks \
             --ks-key-alias ${{ secrets.ANDROID_KEY_ALIAS }} \
             --ks-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
