@@ -38,26 +38,21 @@ jobs:
             -ldflags "-s -w" \
             -name zabbix
 
-      - name: Set up Java for Android SDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Sign APK
         run: |
           VERSION=${{ steps.get_version.outputs.VERSION }}
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > release.jks
-          zipalign -v -p 4 fyne-cross/dist/android/zabbix.apk zabbix-aligned.apk
-          apksigner sign --ks release.jks \
+          ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}
+          BUILD_TOOLS_DIR=$(ls -d $ANDROID_HOME/build-tools/* 2>/dev/null | tail -1)
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "BUILD_TOOLS_DIR=$BUILD_TOOLS_DIR"
+          $BUILD_TOOLS_DIR/zipalign -v -p 4 fyne-cross/dist/android/zabbix.apk zabbix-aligned.apk
+          $BUILD_TOOLS_DIR/apksigner sign --ks release.jks \
             --ks-key-alias ${{ secrets.ANDROID_KEY_ALIAS }} \
             --ks-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
             --key-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
             --out "zabbix-$VERSION.apk" zabbix-aligned.apk
-          apksigner verify "zabbix-$VERSION.apk"
+          $BUILD_TOOLS_DIR/apksigner verify "zabbix-$VERSION.apk"
 
       - name: Create release
         uses: softprops/action-gh-release@v2
