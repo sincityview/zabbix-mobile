@@ -36,6 +36,7 @@ jobs:
             -app-version "${{ steps.get_version.outputs.VERSION }}" \
             -app-build ${{ github.run_number }} \
             -ldflags "-s -w" \
+            -arch arm64 \
             -name zabbix
 
       - name: Sign APK
