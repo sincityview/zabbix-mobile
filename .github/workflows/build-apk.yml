@@ -1,0 +1,90 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract version
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Set up golang
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Cache fyne-cross images
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.fyne-cross/cache
+            ~/.cache/fyne-cross
+          key: fyne-cross-${{ runner.os }}
+
+      - name: Install fyne-cross
+        run: go install github.com/fyne-io/fyne-cross@latest
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ${{ github.workspace }}/go.sum
+          key: go-mod-${{ hashFiles('**/go.sum') }}
+
+      - name: Build APK (arm64 + amd64)
+        run: |
+          fyne-cross android \
+            -app-id com.zabbix.mobile.monitor \
+            -icon icon.png \
+            -app-version "${{ steps.get_version.outputs.VERSION }}" \
+            -app-build ${{ github.run_number }} \
+            -ldflags "-s -w" \
+            -strip \
+            -arch arm64,amd64
+
+      - name: Copy APK for signing
+        run: |
+          cp fyne-cross/dist/android/*/zabbix.apk zabbix-unsigned.apk 2>/dev/null || \
+          cp fyne-cross/dist/android/zabbix.apk zabbix-unsigned.apk
+
+      - name: Set up Java for Android SDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Sign APK
+        run: |
+          VERSION=${{ steps.get_version.outputs.VERSION }}
+          BUILD_TOOLS=$ANDROID_HOME/build-tools/*/
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > release.jks
+          zipalign -v -p 4 zabbix-unsigned.apk zabbix-aligned.apk
+          apksigner sign --ks release.jks \
+            --ks-key-alias ${{ secrets.ANDROID_KEY_ALIAS }} \
+            --ks-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
+            --key-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
+            --out "zabbix-$VERSION.apk" zabbix-aligned.apk
+          apksigner verify "zabbix-$VERSION.apk"
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: zabbix-${{ steps.get_version.outputs.VERSION }}.apk
+          name: Release ${{ steps.get_version.outputs.VERSION }}
+          tag_name: ${{ github.ref_name }}

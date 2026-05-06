@@ -34,12 +34,5 @@ type Host struct {
 type ZabbixResponse struct {
 	JSONRPC string          `json:"jsonrpc"`
 	Result  json.RawMessage `json:"result"`
-	Error   *struct {
-		Code    int    `json:"code"`
-		Message string `json:"message"`
-	} `json:"error"`
+	Error   interface{}     `json:"error"`
 }
-
-type jsonRawMessage []byte
-
-func (m *jsonRawMessage) UnmarshalJSON(data []byte) error { *m = data; return nil }

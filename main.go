@@ -175,9 +175,15 @@ func main() {
 		urlEntry.Text = myApp.Preferences().String("ZABBIX_URL")
 		urlEntry.SetPlaceHolder("")
 
+		userEntry := widget.NewEntry()
+		userEntry.Text = myApp.Preferences().String("ZABBIX_USER")
+
+		passEntry := widget.NewPasswordEntry()
+		passEntry.Text = myApp.Preferences().String("ZABBIX_PASS")
+
 		tokenEntry := widget.NewPasswordEntry()
 		tokenEntry.Text = myApp.Preferences().String("ZABBIX_TOKEN")
-		urlEntry.SetPlaceHolder("")
+		tokenEntry.SetPlaceHolder("")
 
 		selfSignedCheck := widget.NewCheck(data.Tr("self_signed"), nil)
 		selfSignedCheck.SetChecked(myApp.Preferences().BoolWithFallback("SELF_SIGNED", false))
@@ -207,6 +213,10 @@ func main() {
 			urlEntry,
 			widget.NewLabel(data.Tr("token")),
 			tokenEntry,
+			widget.NewLabel(data.Tr("username")),
+			userEntry,
+			widget.NewLabel(data.Tr("password")),
+			passEntry,
 			selfSignedCheck,
 			widget.NewLabel(data.Tr("refresh_interval")),
 			intervalEntry,
@@ -224,6 +234,8 @@ func main() {
 
 		saveBtn := widget.NewButton(data.Tr("save"), func() {
 			myApp.Preferences().SetString("ZABBIX_URL", urlEntry.Text)
+			myApp.Preferences().SetString("ZABBIX_USER", userEntry.Text)
+			myApp.Preferences().SetString("ZABBIX_PASS", passEntry.Text)
 			myApp.Preferences().SetString("ZABBIX_TOKEN", tokenEntry.Text)
 			myApp.Preferences().SetBool("SELF_SIGNED", selfSignedCheck.Checked)
 			myApp.Preferences().SetString("REFRESH_INTERVAL", intervalEntry.Text)

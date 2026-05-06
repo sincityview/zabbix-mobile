@@ -3,6 +3,7 @@ package data
 import (
 	"bytes"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"fyne.io/fyne/v2"
@@ -10,6 +11,11 @@ import (
 	"strconv"
 	"time"
 )
+
+func basicAuth(username, password string) string {
+	auth := username + ":" + password
+	return "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
+}
 
 func DataRequestAPI(zabbixURL, apiToken string) ([]Problem, error) {
 	if zabbixURL == "" || apiToken == "" {
@@ -72,7 +78,7 @@ func DataRequestAPI(zabbixURL, apiToken string) ([]Problem, error) {
 
 	var triggers []Trigger
 	if err := apiCall(zabbixURL, reqTriggers, &triggers); err != nil {
-		return problems, nil
+		return problems, fmt.Errorf("failed to fetch triggers: %w", err)
 	}
 
 	hostMap := make(map[string]string)
@@ -113,16 +119,27 @@ func apiCall(url string, request interface{}, target interface{}) error {
 		Timeout: 30 * time.Second,
 	}
 
-	resp, err := client.Post(url, "application/json", bytes.NewBuffer(data))
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(data))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	if app := fyne.CurrentApp(); app != nil {
+		user := app.Preferences().String("ZABBIX_USER")
+		pass := app.Preferences().String("ZABBIX_PASS")
+		if user != "" {
+			req.Header.Set("Authorization", basicAuth(user, pass))
+		}
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
-	var zResp struct {
-		Result json.RawMessage `json:"result"`
-		Error  interface{}     `json:"error"`
-	}
+	var zResp ZabbixResponse
 
 	if err := json.NewDecoder(resp.Body).Decode(&zResp); err != nil {
 		return err
