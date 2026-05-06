@@ -47,7 +47,9 @@ jobs:
           BUILD_TOOLS_DIR=$(ls -d $ANDROID_HOME/build-tools/* 2>/dev/null | tail -1)
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "BUILD_TOOLS_DIR=$BUILD_TOOLS_DIR"
-          $BUILD_TOOLS_DIR/zipalign -v -p 4 fyne-cross/dist/android/zabbix.apk zabbix-aligned.apk
+          APK_PATH=$(find fyne-cross/dist -name "*.apk" | head -1)
+          echo "APK_PATH=$APK_PATH"
+          $BUILD_TOOLS_DIR/zipalign -v -p 4 "$APK_PATH" zabbix-aligned.apk
           $BUILD_TOOLS_DIR/apksigner sign --ks release.jks \
             --ks-key-alias ${{ secrets.ANDROID_KEY_ALIAS }} \
             --ks-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
