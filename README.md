@@ -28,4 +28,9 @@ fyne-cross android -app-version 0.5.4 -app-id com.zabbix.mobile.monitor -icon ic
 
 <br>
 
-![main](img/main.jpg) ![settings](img/settings.jpg)
+<table>
+  <tr>
+    <td><img src="img/main.jpg" width="324" /></td>
+    <td><img src="img/settings.jpg" width="324" /></td>
+  </tr>
+</table>
