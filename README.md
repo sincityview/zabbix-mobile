@@ -24,3 +24,8 @@ fyne-cross android -app-version 0.5.4 -app-id com.zabbix.mobile.monitor -icon ic
 
 **TODO**
 - ⊂(◉‿◉)つ
+- Поправить меню настроек когда-нибудь
+
+<br>
+
+![main](img/main.jpg) ![settings](img/settings.jpg)
