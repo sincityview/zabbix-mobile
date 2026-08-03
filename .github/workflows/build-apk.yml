@@ -31,7 +31,7 @@ jobs:
       - name: Build APK
         run: |
           fyne-cross android \
-            -app-id com.zabbix.mobile.monitor \
+            -app-id com.zabbix.android.monitor \
             -icon icon.png \
             -app-version "${{ steps.get_version.outputs.VERSION }}" \
             -app-build ${{ github.run_number }} \

@@ -26,19 +26,36 @@ var (
 
 func getSeverityColor(severity string) color.Color {
 	switch severity {
-	case "5": // Disaster
+	case "5":
 		return color.RGBA{R: 220, G: 0, B: 0, A: 255}
-	case "4": // High
+	case "4":
 		return color.RGBA{R: 255, G: 153, B: 0, A: 255}
-	case "3": // Average
+	case "3":
 		return color.RGBA{R: 255, G: 255, B: 0, A: 255}
-	case "2": // Warning
+	case "2":
 		return color.RGBA{R: 255, G: 200, B: 100, A: 255}
-	case "1": // Information
+	case "1":
 		return color.RGBA{R: 100, G: 150, B: 255, A: 255}
 	default:
 		return theme.Color(theme.ColorNameForeground)
 	}
+}
+
+func buildConfig(myApp fyne.App) data.Config {
+	prefs := myApp.Preferences()
+
+	cfg := data.NewConfig()
+	cfg.URL = prefs.String("ZABBIX_URL")
+	cfg.Token = prefs.String("ZABBIX_TOKEN")
+	cfg.User = prefs.String("ZABBIX_USER")
+	cfg.Password = prefs.String("ZABBIX_PASS")
+	cfg.SelfSigned = prefs.BoolWithFallback("SELF_SIGNED", false)
+
+	if l, err := strconv.Atoi(prefs.StringWithFallback("PROBLEM_LIMIT", "200")); err == nil && l > 0 {
+		cfg.Limit = l
+	}
+
+	return cfg
 }
 
 func main() {
@@ -51,11 +68,13 @@ func main() {
 		myApp.Settings().SetTheme(theme.DarkTheme())
 	}
 
+	data.SetLang(myApp.Preferences().StringWithFallback("LANG", "ru"))
+
 	window := myApp.NewWindow(data.Tr("app_title"))
 	window.Resize(fyne.NewSize(450, 650))
 
 	statusBind := binding.NewString()
-	statusBind.Set("Обновление...")
+	statusBind.Set(data.Tr("waiting_data"))
 
 	statusLabel := widget.NewLabelWithData(statusBind)
 	statusLabel.TextStyle = fyne.TextStyle{Bold: true}
@@ -79,7 +98,6 @@ func main() {
 			problemLabel.Wrapping = fyne.TextWrapWord
 
 			cardContent := container.NewVBox(timeLabel, hostLabel, problemLabel)
-
 			paddedContent := container.NewPadded(cardContent)
 
 			return container.NewBorder(nil, nil, line, nil, paddedContent)
@@ -129,16 +147,15 @@ func main() {
 	mainStack := container.NewStack(centeredWelcome, list)
 
 	refreshFunc := func() {
-		u := myApp.Preferences().String("ZABBIX_URL")
-		t := myApp.Preferences().String("ZABBIX_TOKEN")
+		cfg := buildConfig(myApp)
 
-		if u == "" || t == "" {
+		if cfg.URL == "" || cfg.Token == "" {
 			statusBind.Set(data.Tr("configure_server"))
 			return
 		}
 
 		go func() {
-			problems, err := data.DataRequestAPI(u, t)
+			problems, err := data.DataRequestAPI(cfg)
 			if err != nil {
 				statusBind.Set(data.Tr("api_error"))
 				return
@@ -173,7 +190,6 @@ func main() {
 
 		urlEntry := widget.NewEntry()
 		urlEntry.Text = myApp.Preferences().String("ZABBIX_URL")
-		urlEntry.SetPlaceHolder("")
 
 		userEntry := widget.NewEntry()
 		userEntry.Text = myApp.Preferences().String("ZABBIX_USER")
@@ -183,7 +199,6 @@ func main() {
 
 		tokenEntry := widget.NewPasswordEntry()
 		tokenEntry.Text = myApp.Preferences().String("ZABBIX_TOKEN")
-		tokenEntry.SetPlaceHolder("")
 
 		selfSignedCheck := widget.NewCheck(data.Tr("self_signed"), nil)
 		selfSignedCheck.SetChecked(myApp.Preferences().BoolWithFallback("SELF_SIGNED", false))
@@ -195,22 +210,27 @@ func main() {
 		limitEntry.Text = myApp.Preferences().StringWithFallback("PROBLEM_LIMIT", "200")
 
 		themeSelect := widget.NewSelect([]string{"Dark", "Light"}, nil)
-		themeSelect.SetSelected("Dark")
 		if myApp.Preferences().String("THEME") == "light" {
 			themeSelect.SetSelected("Light")
+		} else {
+			themeSelect.SetSelected("Dark")
 		}
 
 		langOptions := []string{"Русский", "English"}
 		langSelect := widget.NewSelect(langOptions, nil)
-		if data.CurrentLang == "en" {
+		if data.CurrentLang() == "en" {
 			langSelect.SetSelected("English")
 		} else {
 			langSelect.SetSelected("Русский")
 		}
 
+		urlErrorLabel := widget.NewLabel("")
+		urlErrorLabel.Hide()
+
 		formContent := container.NewVBox(
 			widget.NewLabel(data.Tr("url_server")),
 			urlEntry,
+			urlErrorLabel,
 			widget.NewLabel(data.Tr("token")),
 			tokenEntry,
 			widget.NewLabel(data.Tr("username")),
@@ -233,6 +253,36 @@ func main() {
 		})
 
 		saveBtn := widget.NewButton(data.Tr("save"), func() {
+			urlErrorLabel.Hide()
+
+			if urlEntry.Text == "" {
+				urlErrorLabel.SetText(data.Tr("error_url_required"))
+				urlErrorLabel.Show()
+				return
+			}
+
+			if tokenEntry.Text == "" {
+				tokenEntry.SetError(data.Tr("error_token_required"))
+				return
+			}
+			tokenEntry.SetError("")
+
+			if intervalEntry.Text != "" {
+				if _, err := strconv.Atoi(intervalEntry.Text); err != nil {
+					intervalEntry.SetError(data.Tr("error_invalid_number"))
+					return
+				}
+			}
+			intervalEntry.SetError("")
+
+			if limitEntry.Text != "" {
+				if v, err := strconv.Atoi(limitEntry.Text); err != nil || v <= 0 {
+					limitEntry.SetError(data.Tr("error_invalid_number"))
+					return
+				}
+			}
+			limitEntry.SetError("")
+
 			myApp.Preferences().SetString("ZABBIX_URL", urlEntry.Text)
 			myApp.Preferences().SetString("ZABBIX_USER", userEntry.Text)
 			myApp.Preferences().SetString("ZABBIX_PASS", passEntry.Text)
@@ -242,9 +292,11 @@ func main() {
 			myApp.Preferences().SetString("PROBLEM_LIMIT", limitEntry.Text)
 
 			if langSelect.Selected == "English" {
-				data.CurrentLang = "en"
+				data.SetLang("en")
+				myApp.Preferences().SetString("LANG", "en")
 			} else {
-				data.CurrentLang = "ru"
+				data.SetLang("ru")
+				myApp.Preferences().SetString("LANG", "ru")
 			}
 
 			if themeSelect.Selected == "Light" {

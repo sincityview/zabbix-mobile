@@ -3,7 +3,7 @@
 
 **Версия App**
 ```text
-v0.5.4
+v0.6.0
 ```
 
 **Версия Go**
@@ -15,16 +15,12 @@ v0.5.4
 ```text
 go install github.com/fyne-io/fyne-cross@latest
 
-fyne-cross android -app-version 0.5.4 -app-id com.zabbix.mobile.monitor -icon icon.png
+fyne-cross android -app-version 0.6.0 -app-id com.zabbix.android.monitor -icon icon.png
 ```
 
 **Приложение для Android**
 - Нужно сгенерировать на стороне сервера Token
 - Можно получать текущие проблемы
-
-**TODO**
-- ⊂(◉‿◉)つ
-- Поправить меню настроек когда-нибудь
 
 <br>
 

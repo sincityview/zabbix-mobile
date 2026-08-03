@@ -6,30 +6,57 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"fyne.io/fyne/v2"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
 )
+
+type Config struct {
+	URL        string
+	Token      string
+	User       string
+	Password   string
+	Limit      int
+	SelfSigned bool
+	RetryCount int
+	RetryDelay time.Duration
+}
+
+func NewConfig() Config {
+	return Config{
+		Limit:      200,
+		RetryCount: 3,
+		RetryDelay: 1 * time.Second,
+	}
+}
+
+func (c Config) httpClient() *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: c.SelfSigned,
+			},
+		},
+		Timeout: 30 * time.Second,
+	}
+}
 
 func basicAuth(username, password string) string {
 	auth := username + ":" + password
 	return "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
 }
 
-func DataRequestAPI(zabbixURL, apiToken string) ([]Problem, error) {
-	if zabbixURL == "" || apiToken == "" {
-		return nil, fmt.Errorf("URL или Токен не настроены")
+func DataRequestAPI(cfg Config) ([]Problem, error) {
+	if cfg.URL == "" || cfg.Token == "" {
+		return nil, fmt.Errorf("URL и Token обязательны")
 	}
 
-	limitStr := "200"
-	if app := fyne.CurrentApp(); app != nil {
-		limitStr = app.Preferences().StringWithFallback("PROBLEM_LIMIT", "200")
+	if cfg.RetryCount <= 0 {
+		cfg.RetryCount = 3
 	}
-
-	limit := 0
-	if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
-		limit = l
+	if cfg.RetryDelay <= 0 {
+		cfg.RetryDelay = 1 * time.Second
 	}
 
 	reqProblem := ZabbixRequest{
@@ -42,16 +69,16 @@ func DataRequestAPI(zabbixURL, apiToken string) ([]Problem, error) {
 			"suppressed": false,
 			"recent":     true,
 		},
-		Auth: apiToken,
+		Auth: cfg.Token,
 		ID:   1,
 	}
 
-	if limit > 0 {
-		reqProblem.Params["limit"] = limit
+	if cfg.Limit > 0 {
+		reqProblem.Params["limit"] = cfg.Limit
 	}
 
 	var problems []Problem
-	if err := apiCall(zabbixURL, reqProblem, &problems); err != nil {
+	if err := apiCall(cfg, reqProblem, &problems); err != nil {
 		return nil, err
 	}
 
@@ -72,12 +99,12 @@ func DataRequestAPI(zabbixURL, apiToken string) ([]Problem, error) {
 			"selectHosts": []string{"name"},
 			"output":      []string{"triggerid"},
 		},
-		Auth: apiToken,
+		Auth: cfg.Token,
 		ID:   2,
 	}
 
 	var triggers []Trigger
-	if err := apiCall(zabbixURL, reqTriggers, &triggers); err != nil {
+	if err := apiCall(cfg, reqTriggers, &triggers); err != nil {
 		return problems, fmt.Errorf("failed to fetch triggers: %w", err)
 	}
 
@@ -99,38 +126,39 @@ func DataRequestAPI(zabbixURL, apiToken string) ([]Problem, error) {
 	return problems, nil
 }
 
-func apiCall(url string, request interface{}, target interface{}) error {
-	data, err := json.Marshal(request)
+func apiCall(cfg Config, request interface{}, target interface{}) error {
+	body, err := json.Marshal(request)
 	if err != nil {
 		return err
 	}
 
-	selfSigned := false
-	if app := fyne.CurrentApp(); app != nil {
-		selfSigned = app.Preferences().BoolWithFallback("SELF_SIGNED", false)
+	var lastErr error
+	client := cfg.httpClient()
+
+	for attempt := 0; attempt <= cfg.RetryCount; attempt++ {
+		if attempt > 0 {
+			delay := cfg.RetryDelay * time.Duration(math.Pow(2, float64(attempt-1)))
+			time.Sleep(delay)
+		}
+
+		lastErr = doRequest(client, cfg, body, target)
+		if lastErr == nil {
+			return nil
+		}
 	}
 
-	client := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: selfSigned,
-			},
-		},
-		Timeout: 30 * time.Second,
-	}
+	return fmt.Errorf("все попытки исчерпаны: %w", lastErr)
+}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(data))
+func doRequest(client *http.Client, cfg Config, body []byte, target interface{}) error {
+	req, err := http.NewRequest("POST", cfg.URL, bytes.NewBuffer(body))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	if app := fyne.CurrentApp(); app != nil {
-		user := app.Preferences().String("ZABBIX_USER")
-		pass := app.Preferences().String("ZABBIX_PASS")
-		if user != "" {
-			req.Header.Set("Authorization", basicAuth(user, pass))
-		}
+	if cfg.User != "" {
+		req.Header.Set("Authorization", basicAuth(cfg.User, cfg.Password))
 	}
 
 	resp, err := client.Do(req)
@@ -140,7 +168,6 @@ func apiCall(url string, request interface{}, target interface{}) error {
 	defer resp.Body.Close()
 
 	var zResp ZabbixResponse
-
 	if err := json.NewDecoder(resp.Body).Decode(&zResp); err != nil {
 		return err
 	}
