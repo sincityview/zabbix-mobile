@@ -262,26 +262,26 @@ func main() {
 			}
 
 			if tokenEntry.Text == "" {
-				tokenEntry.SetError(data.Tr("error_token_required"))
+				urlErrorLabel.SetText(data.Tr("error_token_required"))
+				urlErrorLabel.Show()
 				return
 			}
-			tokenEntry.SetError("")
 
 			if intervalEntry.Text != "" {
 				if _, err := strconv.Atoi(intervalEntry.Text); err != nil {
-					intervalEntry.SetError(data.Tr("error_invalid_number"))
+					urlErrorLabel.SetText(data.Tr("error_invalid_number"))
+					urlErrorLabel.Show()
 					return
 				}
 			}
-			intervalEntry.SetError("")
 
 			if limitEntry.Text != "" {
 				if v, err := strconv.Atoi(limitEntry.Text); err != nil || v <= 0 {
-					limitEntry.SetError(data.Tr("error_invalid_number"))
+					urlErrorLabel.SetText(data.Tr("error_invalid_number"))
+					urlErrorLabel.Show()
 					return
 				}
 			}
-			limitEntry.SetError("")
 
 			myApp.Preferences().SetString("ZABBIX_URL", urlEntry.Text)
 			myApp.Preferences().SetString("ZABBIX_USER", userEntry.Text)
