@@ -8,7 +8,6 @@ type ZabbixRequest struct {
 	JSONRPC string         `json:"jsonrpc"`
 	Method  string         `json:"method"`
 	Params  map[string]any `json:"params"`
-	Auth    string         `json:"auth,omitempty"`
 	ID      int            `json:"id"`
 }
 
