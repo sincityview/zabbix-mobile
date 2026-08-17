@@ -69,8 +69,7 @@ func DataRequestAPI(cfg Config) ([]Problem, error) {
 			"suppressed": false,
 			"recent":     true,
 		},
-		Auth: cfg.Token,
-		ID:   1,
+		ID: 1,
 	}
 
 	if cfg.Limit > 0 {
@@ -99,8 +98,7 @@ func DataRequestAPI(cfg Config) ([]Problem, error) {
 			"selectHosts": []string{"name"},
 			"output":      []string{"triggerid"},
 		},
-		Auth: cfg.Token,
-		ID:   2,
+		ID: 2,
 	}
 
 	var triggers []Trigger
@@ -157,7 +155,9 @@ func doRequest(client *http.Client, cfg Config, body []byte, target interface{})
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	if cfg.User != "" {
+	if cfg.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+cfg.Token)
+	} else if cfg.User != "" {
 		req.Header.Set("Authorization", basicAuth(cfg.User, cfg.Password))
 	}
 
