@@ -25,10 +25,17 @@ jobs:
           go-version: '1.24'
           cache: true
 
+      - name: Install Linux GUI build dependencies
+        # нужны только для линковки тестов пакета main (cgo + OpenGL/X11);
+        # сами тесты идут headless через тестовый драйвер fyne
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev xorg-dev
+
       - name: Vet and test
         run: |
-          go vet ./data/
-          go test ./data/ -race
+          go vet ./...
+          go test ./... -race
 
       - name: Install fyne-cross
         run: go install github.com/fyne-io/fyne-cross@latest
