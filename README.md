@@ -16,14 +16,33 @@ v0.8.0
 go install github.com/fyne-io/fyne-cross@latest
 
 fyne-cross android -app-version 0.8.0 -app-id com.zabbix.android.monitor -icon icon.png \
-  -ldflags "-s -w -buildid=" -env GOFLAGS=-trimpath -tags no_emoji -arch arm64
+  -tags no_emoji -arch arm64
 ```
+
+**Важно про `-ldflags` у fyne-cross.** Linker-флаги fyne-cross передаёт не
+аргументом, а через переменную `GOFLAGS`, и оборачивает значение в кавычки, если
+в нём есть `=` (`AppendEnv` в `internal/command/docker.go`). Поэтому:
+
+- `-ldflags "-s -w"` **ломает сборку** — многословное значение схлопывается в
+  один аргумент (`go: parsing $GOFLAGS: unknown flag ...` или
+  `flag provided but not defined: -ldflags`);
+- допустим только один токен, например `-ldflags "-s"`;
+- по умолчанию strip уже делает сам fyne: fyne-cross вызывает
+  `fyne package -release`, а тот добавляет `-ldflags -w` и `-trimpath`
+  (см. `cmd/fyne/internal/mobile/build.go`). Поэтому флаги вообще не нужны.
+
+Если нужен максимально маленький APK, можно перекрыть это поведение:
+`-no-strip-debug -ldflags "-s"` — экономит ещё ~2.4 МБ (символьная таблица), но
+сборка пойдёт без `release`-режима fyne.
 
 **Приложение для Android**
 - Нужно сгенерировать на стороне сервера Token (или использовать логин/пароль)
 - Можно получать текущие проблемы
 - Есть проверка подключения прямо в окне настроек
 - Кеш последнего ответа: при запуске данные видны сразу, без ожидания сети
+- Карточка триггера — всегда три строки фиксированной высоты (время, хост,
+  проблема): длинные значения обрезаются посередине с сохранением значимого
+  хвоста, а полный текст открывается тапом по карточке
 
 <br>
 
@@ -92,8 +111,14 @@ Keystore через Fyne недоступен без cgo/JNI, поэтому з�
 
 **Тесты**
 ```text
-go test ./data/
+go test ./...            # логика (data) + layout-тесты карточек (main)
+go test ./data/          # только логика, без GUI-зависимостей
 ```
+
+Тесты пакета `main` работают headless через тестовый драйвер fyne и проверяют,
+что высота карточки не зависит от длины названий, а обрезанный текст помещается
+в ширину и сохраняет хвост имени хоста. Для их линковки на Linux нужны
+`libgl1-mesa-dev` и `xorg-dev`.
 
 <br>
 

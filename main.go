@@ -13,7 +13,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
-	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -96,6 +96,14 @@ func newMonitor(a fyne.App) *monitor {
 			row.clear()
 		},
 	)
+	// Тап по карточке открывает подробности целиком: в строке текст обрезан,
+	// чтобы высота карточки не зависела от длины названий.
+	m.list.OnSelected = func(id widget.ListItemID) {
+		m.list.Unselect(id)
+		if p, ok := m.problemAt(id); ok {
+			m.showProblemDetails(p)
+		}
+	}
 
 	m.welcome = widget.NewRichText(&widget.TextSegment{
 		Text:  data.Tr("waiting_data"),
@@ -139,7 +147,11 @@ func (m *monitor) buildContent() fyne.CanvasObject {
 
 	m.refreshBtn = widget.NewButtonWithIcon(data.Tr("update"), theme.ViewRefreshIcon(), m.refresh)
 
-	topBar := container.NewHBox(m.statusLbl, layout.NewSpacer(), settingsBtn)
+	// Border, а не HBox: у label с Truncation MinSize равен ширине одного
+	// символа (widget/richtext.go, calculateMin), поэтому в HBox статус
+	// сжимался в «…». В Border центральный элемент получает всю оставшуюся
+	// ширину, и текст рисуется целиком (обрезаясь только если реально не влез).
+	topBar := container.NewBorder(nil, nil, nil, settingsBtn, m.statusLbl)
 
 	return container.NewBorder(
 		container.NewVBox(topBar, widget.NewSeparator()),
@@ -306,9 +318,6 @@ func (m *monitor) applyResult(problems []data.Problem, err error) {
 	}
 
 	count := fmt.Sprintf(data.Tr("problems_count"), len(problems))
-	if fresh := countNew(prev, problems); fresh > 0 {
-		count += " · " + fmt.Sprintf(data.Tr("new_problems"), fresh)
-	}
 
 	switch {
 	case err != nil:
@@ -375,11 +384,7 @@ func (m *monitor) applySettings(st data.Settings) {
 	}
 
 	data.SetLang(st.Lang)
-	if st.Theme == "light" {
-		m.app.Settings().SetTheme(theme.LightTheme())
-	} else {
-		m.app.Settings().SetTheme(theme.DarkTheme())
-	}
+	m.app.Settings().SetTheme(appTheme(st.Theme == "light"))
 
 	if m.window != nil {
 		m.window.SetTitle(data.Tr("app_title"))
@@ -421,6 +426,37 @@ func (m *monitor) resetSettings() error {
 	return errors.Join(errs...)
 }
 
+// separatorTheme делает разделители видимыми.
+//
+// В тёмной теме fyne рисует их чисто чёрным (theme.colorDarkSeparator =
+// {0,0,0,255}) на почти чёрном фоне — линия не видна вообще, поэтому карточки
+// в списке сливались. Подменяем только цвет разделителя, остальное берём из
+// базовой темы.
+type separatorTheme struct {
+	fyne.Theme
+}
+
+// appTheme собирает тему приложения: базовая тема + видимые разделители.
+func appTheme(light bool) fyne.Theme {
+	base := fyne.Theme(theme.DarkTheme())
+	if light {
+		base = theme.LightTheme()
+	}
+	return separatorTheme{Theme: base}
+}
+
+func (t separatorTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) color.Color {
+	if name == theme.ColorNameSeparator {
+		if variant == theme.VariantLight {
+			// полупрозрачный чёрный поверх светлого фона
+			return color.NRGBA{A: 0x38}
+		}
+		// полупрозрачный белый поверх тёмного фона
+		return color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0x50}
+	}
+	return t.Theme.Color(name, variant)
+}
+
 var welcomeStyle = widget.RichTextStyle{
 	Alignment: fyne.TextAlignCenter,
 	TextStyle: fyne.TextStyle{Bold: true},
@@ -444,8 +480,16 @@ func severityColor(level int) color.Color {
 	}
 }
 
-// problemRow — строка списка как отдельный виджет: типизированные поля вместо
-// обхода дерева объектов с приведением типов при каждом обновлении.
+// rowBarWidth — ширина цветной полосы важности.
+const rowBarWidth float32 = 6
+
+// problemRow — строка списка как отдельный виджет.
+//
+// Каждое поле — ровно одна строка с обрезкой: у widget.List высота элемента
+// фиксированная (одна на все строки, см. l.itemMin в widget/list.go), поэтому
+// перенос длинного имени хоста на вторую строку выталкивал текст проблемы за
+// границу карточки. Длинные значения обрезаются посередине (чтобы сохранить
+// хвост вида "[ ELTEX MES2324FB ]"), а полностью текст виден по тапу.
 type problemRow struct {
 	widget.BaseWidget
 
@@ -454,7 +498,9 @@ type problemRow struct {
 	hostLabel *widget.Label
 	nameLabel *widget.Label
 
-	lastEventID, lastName, lastHost, lastClock, lastSeverity string
+	full     data.Problem
+	filled   bool
+	fitWidth float32
 }
 
 func newProblemRow() *problemRow {
@@ -465,11 +511,14 @@ func newProblemRow() *problemRow {
 		nameLabel: widget.NewLabel(""),
 	}
 
-	r.bar.SetMinSize(fyne.NewSize(6, 0))
+	r.bar.SetMinSize(fyne.NewSize(rowBarWidth, 0))
 	r.timeLabel.TextStyle = fyne.TextStyle{Italic: true}
 	r.hostLabel.TextStyle = fyne.TextStyle{Bold: true}
-	r.hostLabel.Wrapping = fyne.TextWrapWord
-	r.nameLabel.Wrapping = fyne.TextWrapWord
+
+	for _, label := range []*widget.Label{r.timeLabel, r.hostLabel, r.nameLabel} {
+		label.Wrapping = fyne.TextWrapOff
+		label.Truncation = fyne.TextTruncateEllipsis
+	}
 
 	r.ExtendBaseWidget(r)
 	return r
@@ -477,30 +526,153 @@ func newProblemRow() *problemRow {
 
 // setProblem обновляет строку, только если её данные действительно изменились.
 func (r *problemRow) setProblem(p data.Problem) {
-	if r.lastEventID == p.EventID && r.lastName == p.Name && r.lastHost == p.HostName &&
-		r.lastClock == p.Clock && r.lastSeverity == p.Severity {
+	if r.filled && r.full == p {
 		return
 	}
-	r.lastEventID, r.lastName, r.lastHost = p.EventID, p.Name, p.HostName
-	r.lastClock, r.lastSeverity = p.Clock, p.Severity
+
+	r.full = p
+	r.filled = true
+	r.fitWidth = 0 // текст мог измениться — пересчитать под ширину
 
 	r.timeLabel.SetText(data.FormatTime(p.Clock))
-	r.hostLabel.SetText(p.HostName)
-	r.nameLabel.SetText(p.Name)
 	r.bar.FillColor = severityColor(p.SeverityLevel())
 	r.bar.Refresh()
+	r.refit()
 }
 
 func (r *problemRow) clear() {
-	r.lastEventID, r.lastName, r.lastHost, r.lastClock, r.lastSeverity = "", "", "", "", ""
+	r.full = data.Problem{}
+	r.filled = false
+	r.fitWidth = 0
 	r.timeLabel.SetText("")
 	r.hostLabel.SetText("")
 	r.nameLabel.SetText("")
 }
 
+// Resize вызывается списком при изменении ширины — пересчитываем обрезку.
+func (r *problemRow) Resize(size fyne.Size) {
+	r.BaseWidget.Resize(size)
+	r.refit()
+}
+
+// refit подгоняет хост и текст проблемы под доступную ширину карточки.
+func (r *problemRow) refit() {
+	if !r.filled {
+		return
+	}
+	width := r.Size().Width - rowBarWidth - 2*theme.Padding()
+	if width <= 0 || width == r.fitWidth {
+		return
+	}
+	r.fitWidth = width
+
+	size := theme.TextSize()
+	r.hostLabel.SetText(fitMiddle(r.full.HostName, width, size, r.hostLabel.TextStyle))
+	r.nameLabel.SetText(fitMiddle(r.full.Name, width, size, r.nameLabel.TextStyle))
+}
+
 func (r *problemRow) CreateRenderer() fyne.WidgetRenderer {
 	body := container.NewPadded(container.NewVBox(r.timeLabel, r.hostLabel, r.nameLabel))
 	return widget.NewSimpleRenderer(container.NewBorder(nil, nil, r.bar, nil, body))
+}
+
+// fitMiddle обрезает текст посередине так, чтобы он уложился в width.
+func fitMiddle(text string, width, size float32, style fyne.TextStyle) string {
+	if text == "" {
+		return ""
+	}
+	if fyne.MeasureText(text, size, style).Width <= width {
+		return text
+	}
+
+	runes := []rune(text)
+	if len(runes) < 3 {
+		return "…"
+	}
+
+	best := "…"
+	lo, hi := 1, len(runes)-1
+	for lo <= hi {
+		mid := (lo + hi) / 2
+		candidate := middleEllipsis(runes, mid)
+		if fyne.MeasureText(candidate, size, style).Width <= width {
+			best = candidate
+			lo = mid + 1
+			continue
+		}
+		hi = mid - 1
+	}
+	return best
+}
+
+// middleEllipsis оставляет keep исходных символов, обрезая середину.
+//
+// Хвосту отдаётся 60%: в именах хостов Zabbix значимая часть обычно в конце
+// («... [ ELTEX MES2324FB ]»), а начало (улица, дом) и так узнаваемо.
+func middleEllipsis(runes []rune, keep int) string {
+	if keep >= len(runes) {
+		return string(runes)
+	}
+	if keep <= 1 {
+		return "…"
+	}
+
+	head := keep * 2 / 5
+	if head < 1 {
+		head = 1
+	}
+	tail := keep - head
+	if tail <= 0 {
+		return string(runes[:head]) + "…"
+	}
+	return string(runes[:head]) + "…" + string(runes[len(runes)-tail:])
+}
+
+// showProblemDetails показывает карточку целиком (текст в строке обрезан).
+func (m *monitor) showProblemDetails(p data.Problem) {
+	line := func(format string, args ...any) *widget.Label {
+		l := widget.NewLabel(fmt.Sprintf(format, args...))
+		l.Wrapping = fyne.TextWrapWord
+		return l
+	}
+
+	acknowledged := data.Tr("no")
+	if p.AcknowledgedProblem() {
+		acknowledged = data.Tr("yes")
+	}
+
+	content := container.NewVBox(
+		line("%s: %s", data.Tr("time"), data.FormatTime(p.Clock)),
+		line("%s: %s", data.Tr("host"), p.HostName),
+		line("%s: %s", data.Tr("problem"), p.Name),
+		line("%s: %s", data.Tr("severity"), severityName(p.SeverityLevel())),
+		line("%s: %s", data.Tr("acknowledged"), acknowledged),
+	)
+
+	scroll := container.NewVScroll(container.NewPadded(content))
+	scroll.SetMinSize(fyne.NewSize(300, 180))
+
+	dialog.NewCustom(data.Tr("problem_details"), data.Tr("close"), scroll, m.window).Show()
+}
+
+// severityName переводит уровень важности в человекочитаемое имя.
+func severityName(level int) string {
+	switch level {
+	case 5:
+		return data.Tr("severity_5")
+	case 4:
+		return data.Tr("severity_4")
+	case 3:
+		return data.Tr("severity_3")
+	case 2:
+		return data.Tr("severity_2")
+	case 1:
+		return data.Tr("severity_1")
+	case 0:
+		return data.Tr("severity_0")
+	default:
+		return data.Tr("severity_unknown")
+	}
 }
 
 // problemsEqual сравнивает два ответа API без аллокаций.
@@ -514,24 +686,6 @@ func problemsEqual(a, b []data.Problem) bool {
 		}
 	}
 	return true
-}
-
-// countNew считает проблемы, которых не было в предыдущем ответе.
-func countNew(prev, next []data.Problem) int {
-	if len(prev) == 0 || len(next) == 0 {
-		return 0
-	}
-	seen := make(map[string]struct{}, len(prev))
-	for i := range prev {
-		seen[prev[i].EventID] = struct{}{}
-	}
-	fresh := 0
-	for i := range next {
-		if _, ok := seen[next[i].EventID]; !ok {
-			fresh++
-		}
-	}
-	return fresh
 }
 
 // shortError укорачивает текст ошибки для строки статуса.

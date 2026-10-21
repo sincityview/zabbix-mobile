@@ -296,3 +296,65 @@ func mustJSON(v any) json.RawMessage {
 	b, _ := json.Marshal(v)
 	return b
 }
+
+// Регрессия: на втором опросе (все триггеры уже в кеше) имена хостов должны
+// оставаться заполненными — раньше ранний выход из resolveHosts оставлял
+// HostName пустым, и в UI пропадала строка с хостом.
+func TestClient_HostNamesSurviveFromCache(t *testing.T) {
+	f, srv := newFakeZabbix(t)
+
+	c := NewClient(Config{URL: srv.URL, Token: "t"})
+	for i := 0; i < 3; i++ {
+		problems, err := c.Problems()
+		if err != nil {
+			t.Fatalf("опрос %d: Problems() error = %v", i+1, err)
+		}
+		if len(problems) != 2 {
+			t.Fatalf("опрос %d: получено %d проблем", i+1, len(problems))
+		}
+		for _, p := range problems {
+			if p.HostName == "" {
+				t.Fatalf("опрос %d: у проблемы %s пустое имя хоста", i+1, p.EventID)
+			}
+			if p.HostName == unknownHost {
+				t.Fatalf("опрос %d: проблема %s потеряла хост", i+1, p.EventID)
+			}
+		}
+	}
+
+	// и запрос кеш не должен был повторяться
+	if got := f.count("trigger.get"); got != 1 {
+		t.Errorf("trigger.get вызовов = %d, want 1", got)
+	}
+}
+
+// Смешанный случай: часть триггеров в кеше, часть новых.
+func TestClient_PartialHostCacheHit(t *testing.T) {
+	f, srv := newFakeZabbix(t)
+
+	c := NewClient(Config{URL: srv.URL, Token: "t"})
+	if _, err := c.Problems(); err != nil {
+		t.Fatalf("Problems() error = %v", err)
+	}
+
+	// на сервере появляется новая проблема с новым триггером
+	f.mu.Lock()
+	f.problems = append(f.problems, Problem{EventID: "3", Name: "Ping loss", Clock: "1700000002", Severity: "3", ObjectID: "300"})
+	f.hosts = append(f.hosts, Trigger{TriggerID: "300", Hosts: []Host{{Name: "host-c"}}})
+	f.mu.Unlock()
+
+	problems, err := c.Problems()
+	if err != nil {
+		t.Fatalf("Problems() error = %v", err)
+	}
+
+	want := map[string]string{"1": "host-a", "2": "host-b", "3": "host-c"}
+	for _, p := range problems {
+		if p.HostName != want[p.EventID] {
+			t.Errorf("проблема %s: HostName = %q, want %q", p.EventID, p.HostName, want[p.EventID])
+		}
+	}
+	if got := f.count("trigger.get"); got != 2 {
+		t.Errorf("trigger.get вызовов = %d, want 2 (второй раз только за новым триггером)", got)
+	}
+}

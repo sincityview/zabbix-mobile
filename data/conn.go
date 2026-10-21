@@ -291,27 +291,25 @@ func (c *Client) resolveHosts(problems []Problem) error {
 		ids = append(ids, p.ObjectID)
 	}
 
-	fresh := c.freshHosts(ids)
-	if len(ids) > 0 && len(fresh) == 0 {
-		return nil // всё нашлось в кеше
+	// Запрашиваем только то, чего нет в кеше. Если в кеше есть всё — сетевой
+	// запрос не нужен, но имена хостов всё равно надо проставить ниже.
+	if fresh := c.freshHosts(ids); len(fresh) > 0 {
+		var triggers []Trigger
+		err := c.call(ZabbixRequest{
+			JSONRPC: "2.0",
+			Method:  "trigger.get",
+			Params: map[string]any{
+				"triggerids":  fresh,
+				"selectHosts": []string{"name"},
+				"output":      []string{"triggerid"},
+			},
+			ID: 2,
+		}, &triggers)
+		if err != nil {
+			return err
+		}
+		c.storeHosts(triggers)
 	}
-
-	var triggers []Trigger
-	err := c.call(ZabbixRequest{
-		JSONRPC: "2.0",
-		Method:  "trigger.get",
-		Params: map[string]any{
-			"triggerids":  fresh,
-			"selectHosts": []string{"name"},
-			"output":      []string{"triggerid"},
-		},
-		ID: 2,
-	}, &triggers)
-	if err != nil {
-		return err
-	}
-
-	c.storeHosts(triggers)
 
 	c.mu.Lock()
 	for i := range problems {
