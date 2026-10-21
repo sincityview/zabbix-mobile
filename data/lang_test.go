@@ -64,3 +64,53 @@ func TestConcurrentAccess(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestTranslations_SameKeys(t *testing.T) {
+	ru := Translations["ru"]
+	for lang, dict := range Translations {
+		if lang == "ru" {
+			continue
+		}
+		for key := range ru {
+			if _, ok := dict[key]; !ok {
+				t.Errorf("в языке %q нет перевода %q", lang, key)
+			}
+		}
+		for key := range dict {
+			if _, ok := ru[key]; !ok {
+				t.Errorf("в языке %q лишний ключ %q", lang, key)
+			}
+		}
+	}
+}
+
+func TestSetLang_UnknownFallsBackToRussian(t *testing.T) {
+	SetLang("de")
+	if got := CurrentLang(); got != "ru" {
+		t.Errorf("CurrentLang() = %q, want ru", got)
+	}
+	if got := Tr("save"); got != "Сохранить" {
+		t.Errorf("Tr(save) = %q", got)
+	}
+	SetLang("ru")
+}
+
+func TestTr_HotPathNoRace(t *testing.T) {
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if i%2 == 0 {
+				SetLang("en")
+			} else {
+				SetLang("ru")
+			}
+			if Tr("update") == "" {
+				t.Error("пустой перевод")
+			}
+		}(i)
+	}
+	wg.Wait()
+	SetLang("ru")
+}

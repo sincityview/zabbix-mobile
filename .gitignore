@@ -1,5 +1,6 @@
 .git/
-
 temp/
 fyne-cross/
 keys/
+.workdir/
+.mimocode/

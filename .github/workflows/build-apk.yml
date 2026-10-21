@@ -25,6 +25,11 @@ jobs:
           go-version: '1.24'
           cache: true
 
+      - name: Vet and test
+        run: |
+          go vet ./data/
+          go test ./data/ -race
+
       - name: Install fyne-cross
         run: go install github.com/fyne-io/fyne-cross@latest
 
@@ -35,7 +40,9 @@ jobs:
             -icon icon.png \
             -app-version "${{ steps.get_version.outputs.VERSION }}" \
             -app-build ${{ github.run_number }} \
-            -ldflags "-s -w" \
+            -ldflags "-s -w -buildid=" \
+            -env GOFLAGS=-trimpath \
+            -tags no_emoji \
             -arch arm64 \
             -name zabbix
 
