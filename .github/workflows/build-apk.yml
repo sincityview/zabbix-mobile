@@ -34,17 +34,32 @@ jobs:
         run: go install github.com/fyne-io/fyne-cross@latest
 
       - name: Build APK
+        # ВАЖНО: не добавляйте сюда -ldflags со значением из нескольких слов
+        # ("-s -w") и не задавайте -env GOFLAGS=-trimpath.
+        # fyne-cross прокидывает linker-флаги ТОЛЬКО через переменную GOFLAGS и
+        # оборачивает значение в кавычки, если в нём есть "=" (AppendEnv в
+        # internal/command/docker.go). Многословное значение схлопывается в один
+        # аргумент, и сборка падает на
+        #   go: parsing $GOFLAGS: unknown flag -trimpath -ldflags
+        #   flag provided but not defined: -ldflags
+        # Стрип и trimpath по умолчанию уже даёт сам fyne: fyne-cross передаёт
+        # `fyne package -release`, а тот добавляет `-ldflags -w` и `-trimpath`.
         run: |
           fyne-cross android \
             -app-id com.zabbix.android.monitor \
             -icon icon.png \
             -app-version "${{ steps.get_version.outputs.VERSION }}" \
             -app-build ${{ github.run_number }} \
-            -ldflags "-s -w -buildid=" \
-            -env GOFLAGS=-trimpath \
             -tags no_emoji \
             -arch arm64 \
             -name zabbix
+
+      - name: Show APK size
+        run: |
+          APK_PATH=$(find fyne-cross/dist -name "*.apk" | head -1)
+          echo "APK_PATH=$APK_PATH"
+          ls -lh "$APK_PATH"
+          unzip -l "$APK_PATH" | sort -k1 -n -r | head -8
 
       - name: Sign APK
         run: |

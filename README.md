@@ -16,8 +16,24 @@ v0.8.0
 go install github.com/fyne-io/fyne-cross@latest
 
 fyne-cross android -app-version 0.8.0 -app-id com.zabbix.android.monitor -icon icon.png \
-  -ldflags "-s -w -buildid=" -env GOFLAGS=-trimpath -tags no_emoji -arch arm64
+  -tags no_emoji -arch arm64
 ```
+
+**Важно про `-ldflags` у fyne-cross.** Linker-флаги fyne-cross передаёт не
+аргументом, а через переменную `GOFLAGS`, и оборачивает значение в кавычки, если
+в нём есть `=` (`AppendEnv` в `internal/command/docker.go`). Поэтому:
+
+- `-ldflags "-s -w"` **ломает сборку** — многословное значение схлопывается в
+  один аргумент (`go: parsing $GOFLAGS: unknown flag ...` или
+  `flag provided but not defined: -ldflags`);
+- допустим только один токен, например `-ldflags "-s"`;
+- по умолчанию strip уже делает сам fyne: fyne-cross вызывает
+  `fyne package -release`, а тот добавляет `-ldflags -w` и `-trimpath`
+  (см. `cmd/fyne/internal/mobile/build.go`). Поэтому флаги вообще не нужны.
+
+Если нужен максимально маленький APK, можно перекрыть это поведение:
+`-no-strip-debug -ldflags "-s"` — экономит ещё ~2.4 МБ (символьная таблица), но
+сборка пойдёт без `release`-режима fyne.
 
 **Приложение для Android**
 - Нужно сгенерировать на стороне сервера Token (или использовать логин/пароль)
