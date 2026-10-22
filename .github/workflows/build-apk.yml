@@ -25,32 +25,20 @@ jobs:
           go-version: '1.24'
           cache: true
 
-      # Проверяем и тестируем ТОЛЬКО пакет data: он не тянет fyne/cgo и GL-стек,
-      # поэтому шаг не зависит от системных заголовков и не может сломать релиз.
-      # UI-тесты пакета main (вёрстка карточек, разделители, статус) требуют
-      # libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev и гоняются локально:
-      #   go test . -v
+      - name: Install Linux GUI build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev xorg-dev
+
       - name: Vet and test
         run: |
-          go vet ./data/
-          go test ./data/ -race
+          go vet ./...
+          go test ./... -race
 
       - name: Install fyne-cross
-        # версия зафиксирована: @latest уже один раз принёс несовместимое
-        # поведение (квотирование GOFLAGS в AppendEnv), ломающее сборку
         run: go install github.com/fyne-io/fyne-cross@v1.6.3
 
       - name: Build APK
-        # ВАЖНО: не добавляйте сюда -ldflags со значением из нескольких слов
-        # ("-s -w") и не задавайте -env GOFLAGS=-trimpath.
-        # fyne-cross прокидывает linker-флаги ТОЛЬКО через переменную GOFLAGS и
-        # оборачивает значение в кавычки, если в нём есть "=" (AppendEnv в
-        # internal/command/docker.go). Многословное значение схлопывается в один
-        # аргумент, и сборка падает на
-        #   go: parsing $GOFLAGS: unknown flag -trimpath -ldflags
-        #   flag provided but not defined: -ldflags
-        # Стрип и trimpath по умолчанию уже даёт сам fyne: fyne-cross передаёт
-        # `fyne package -release`, а тот добавляет `-ldflags -w` и `-trimpath`.
         run: |
           fyne-cross android \
             -app-id com.zabbix.android.monitor \
