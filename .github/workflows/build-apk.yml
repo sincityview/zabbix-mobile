@@ -25,15 +25,16 @@ jobs:
           go-version: '1.24'
           cache: true
 
-      # Проверяем и тестируем ТОЛЬКО пакет data: он не тянет fyne/cgo и GL-стек,
-      # поэтому шаг не зависит от системных заголовков и не может сломать релиз.
-      # UI-тесты пакета main (вёрстка карточек, разделители, статус) требуют
-      # libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev и гоняются локально:
-      #   go test . -v
+      - name: Install Linux GUI build dependencies
+        # нужны только для линковки тестов пакета main (cgo + OpenGL/X11);
+        # сами тесты идут headless через тестовый драйвер fyne
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev xorg-dev
       - name: Vet and test
         run: |
-          go vet ./data/
-          go test ./data/ -race
+          go vet ./...
+          go test ./... -race
 
       - name: Install fyne-cross
         # версия зафиксирована: @latest уже один раз принёс несовместимое
