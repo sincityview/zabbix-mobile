@@ -31,14 +31,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libgl1-mesa-dev xorg-dev
-
       - name: Vet and test
         run: |
           go vet ./...
           go test ./... -race
 
       - name: Install fyne-cross
-        run: go install github.com/fyne-io/fyne-cross@latest
+        # версия зафиксирована: @latest уже один раз принёс несовместимое
+        # поведение (квотирование GOFLAGS в AppendEnv), ломающее сборку
+        run: go install github.com/fyne-io/fyne-cross@v1.6.3
 
       - name: Build APK
         # ВАЖНО: не добавляйте сюда -ldflags со значением из нескольких слов
