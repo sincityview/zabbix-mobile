@@ -14,6 +14,7 @@ v0.8.3
 **Сборка Fyne**
 ```text
 go install github.com/fyne-io/fyne-cross@latest
+```
 
 **Приложение для Android**
 - Нужно сгенерировать на стороне сервера Token (или использовать логин/пароль)
