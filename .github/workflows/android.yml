@@ -2,6 +2,10 @@ name: Android APK
 
 on:
   push:
+    branches:
+      - dev
+      - master
+      - main
     tags:
       - 'v*'
   pull_request:
