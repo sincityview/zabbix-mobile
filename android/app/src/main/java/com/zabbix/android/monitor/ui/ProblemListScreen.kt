@@ -29,6 +29,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -58,8 +59,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private const val REFRESH_INTERVAL_MS = 60_000L
-
 /**
  * Состояние экрана. Держим в обычном классе на `mutableStateOf`, а не в
  * ViewModel: экрану нужен один список и один признак ошибки, а переживать
@@ -80,12 +79,17 @@ private class ProblemListState(private val settings: MonitorSettings) {
         private set
     var loading by mutableStateOf(false)
         private set
+
+    /** Обновление, запущенное пользователем (кнопка или жест) — для индикатора. */
+    var refreshing by mutableStateOf(false)
+        private set
     var updatedAt by mutableStateOf(0L)
         private set
 
-    suspend fun refresh() {
+    suspend fun refresh(userInitiated: Boolean = false) {
         if (loading) return
         loading = true
+        if (userInitiated) refreshing = true
         try {
             page = withContext(Dispatchers.IO) { api.problems(limit = settings.safeLimit()) }
             error = null
@@ -96,6 +100,7 @@ private class ProblemListState(private val settings: MonitorSettings) {
             error = e.message ?: e.javaClass.simpleName
         } finally {
             loading = false
+            refreshing = false
         }
     }
 }
@@ -108,15 +113,16 @@ fun ProblemListScreen(settings: MonitorSettings, onOpenSettings: () -> Unit) {
     val lifecycleOwner = LocalLifecycleOwner.current
     var selected by remember { mutableStateOf<Problem?>(null) }
 
-    val refresh: () -> Unit = { scope.launch { state.refresh() } }
+    val refresh: () -> Unit = { scope.launch { state.refresh(userInitiated = true) } }
 
     // Первый запрос при входе на экран.
     LaunchedEffect(state) { state.refresh() }
 
-    // Автообновление: раз в минуту, только когда приложение на переднем плане.
-    LaunchedEffect(state) {
+    // Автообновление с интервалом из настроек, только на переднем плане.
+    val intervalMs = settings.safeIntervalSeconds() * 1000L
+    LaunchedEffect(state, intervalMs) {
         while (true) {
-            delay(REFRESH_INTERVAL_MS)
+            delay(intervalMs)
             if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
                 state.refresh()
             }
@@ -144,7 +150,11 @@ fun ProblemListScreen(settings: MonitorSettings, onOpenSettings: () -> Unit) {
             )
         },
     ) { innerPadding ->
-        Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+        PullToRefreshBox(
+            isRefreshing = state.refreshing,
+            onRefresh = refresh,
+            modifier = Modifier.fillMaxSize().padding(innerPadding),
+        ) {
             when {
                 state.problems.isEmpty() && state.loading -> {
                     CircularProgressIndicator(Modifier.align(Alignment.Center))

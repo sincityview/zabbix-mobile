@@ -14,6 +14,8 @@
     <string name="problem_limit">Лимит отображения проблем</string>
     <string name="problem_limit_hint">Сколько проблем показывать в списке</string>
     <string name="error_invalid_number">Введите число</string>
+    <string name="refresh_interval">Интервал обновления (сек)</string>
+    <string name="refresh_interval_hint">От 10 до 3600 секунд</string>
     <string name="self_signed">Самоподписанный сертификат</string>
     <string name="save">Сохранить</string>
     <string name="cancel">Отмена</string>

@@ -9,6 +9,8 @@ data class MonitorSettings(
     val allowInsecureTls: Boolean = false,
     /** Сколько проблем показывать в списке. */
     val limit: Int = ZabbixApi.DEFAULT_LIMIT,
+    /** Интервал автообновления, секунды. */
+    val intervalSeconds: Int = DEFAULT_INTERVAL_SECONDS,
 ) {
     val isConfigured: Boolean
         get() = ZabbixUrl.normalize(url).isNotEmpty() && token.isNotBlank()
@@ -18,6 +20,28 @@ data class MonitorSettings(
 
     /** Лимит в допустимых границах: мусор в настройках не должен ломать экран. */
     fun safeLimit(): Int = limit.coerceIn(1, ZabbixApi.MAX_LIMIT)
+
+    /** Интервал автообновления в допустимых границах, секунды. */
+    fun safeIntervalSeconds(): Int = intervalSeconds.coerceIn(MIN_INTERVAL_SECONDS, MAX_INTERVAL_SECONDS)
+
+    /**
+     * Приведение к каноническому виду.
+     *
+     * Через `copy`, а не конструктором: раньше экран собирал настройки заново
+     * и терял поле лимита — «Лимит отображения» не сохранялся.
+     */
+    fun normalized(): MonitorSettings = copy(
+        url = ZabbixUrl.normalize(url),
+        token = token.trim(),
+        limit = safeLimit(),
+        intervalSeconds = safeIntervalSeconds(),
+    )
+
+    companion object {
+        const val DEFAULT_INTERVAL_SECONDS = 60
+        const val MIN_INTERVAL_SECONDS = 10
+        const val MAX_INTERVAL_SECONDS = 3600
+    }
 }
 
 class SettingsStore(context: Context) {
@@ -31,14 +55,18 @@ class SettingsStore(context: Context) {
         allowInsecureTls = prefs.getBoolean(KEY_INSECURE_TLS, false),
         limit = prefs.getInt(KEY_LIMIT, ZabbixApi.DEFAULT_LIMIT)
             .coerceIn(1, ZabbixApi.MAX_LIMIT),
+        intervalSeconds = prefs.getInt(KEY_INTERVAL, MonitorSettings.DEFAULT_INTERVAL_SECONDS)
+            .coerceIn(MonitorSettings.MIN_INTERVAL_SECONDS, MonitorSettings.MAX_INTERVAL_SECONDS),
     )
 
     fun save(settings: MonitorSettings) {
+        val st = settings.normalized()
         prefs.edit()
-            .putString(KEY_URL, ZabbixUrl.normalize(settings.url))
-            .putString(KEY_TOKEN, settings.token.trim())
-            .putBoolean(KEY_INSECURE_TLS, settings.allowInsecureTls)
-            .putInt(KEY_LIMIT, settings.safeLimit())
+            .putString(KEY_URL, st.url)
+            .putString(KEY_TOKEN, st.token)
+            .putBoolean(KEY_INSECURE_TLS, st.allowInsecureTls)
+            .putInt(KEY_LIMIT, st.safeLimit())
+            .putInt(KEY_INTERVAL, st.safeIntervalSeconds())
             .apply()
     }
 
@@ -52,5 +80,6 @@ class SettingsStore(context: Context) {
         const val KEY_TOKEN = "token"
         const val KEY_INSECURE_TLS = "insecure_tls"
         const val KEY_LIMIT = "limit"
+        const val KEY_INTERVAL = "interval_seconds"
     }
 }

@@ -8,7 +8,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.zabbix.android.monitor.data.MonitorSettings
 import com.zabbix.android.monitor.data.SettingsStore
-import com.zabbix.android.monitor.data.ZabbixUrl
 
 /**
  * Два экрана без навигационной библиотеки: пока настроек нет — настройки,
@@ -28,11 +27,9 @@ fun MonitorApp() {
             canCancel = settings.isConfigured,
             onCancel = { editing = false },
             onSaved = { saved ->
-                val normalized = MonitorSettings(
-                    url = ZabbixUrl.normalize(saved.url),
-                    token = saved.token.trim(),
-                    allowInsecureTls = saved.allowInsecureTls,
-                )
+                // normalized() использует copy, поэтому лимит, интервал и любые
+                // будущие поля настроек не теряются при сохранении
+                val normalized = saved.normalized()
                 store.save(normalized)
                 settings = normalized
                 editing = false
