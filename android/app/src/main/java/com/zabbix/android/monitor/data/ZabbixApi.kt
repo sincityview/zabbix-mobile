@@ -37,20 +37,17 @@ class ZabbixApi(
     private val endpoint: String = ZabbixUrl.normalize(url)
 
     /**
-     * Забирает проблемы с именами хостов.
+     * Забирает проблемы с именами хостов — все, что видны на странице Problems.
      *
-     * @param limit сколько строк показывать (настройка «лимит отображения»);
-     * @param maxFetch предел одного запроса — столько проблем максимум
+     * @param maxFetch предел одного запроса: столько проблем максимум
      *        просматривается за опрос, чтобы не тянуть бесконечный список.
      */
-    fun problems(limit: Int = DEFAULT_LIMIT, maxFetch: Int = MAX_FETCH): ProblemsPage {
-        val fetch = maxOf(limit, maxFetch)
-        val raw = fetchProblems(fetch)
+    fun problems(maxFetch: Int = MAX_FETCH): ProblemsPage {
+        val raw = fetchProblems(maxFetch)
         val visible = if (raw.isEmpty()) emptyList() else resolveHosts(dedupeByTrigger(raw))
         return ProblemsPage(
-            shown = visible.take(limit),
-            total = visible.size,
-            totalKnown = raw.size < fetch,
+            problems = visible,
+            totalKnown = raw.size < maxFetch,
         )
     }
 

@@ -20,8 +20,11 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -50,7 +53,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.zabbix.android.monitor.R
 import com.zabbix.android.monitor.data.MonitorSettings
 import com.zabbix.android.monitor.data.Problem
+import com.zabbix.android.monitor.data.ProblemSort
 import com.zabbix.android.monitor.data.ProblemsPage
+import com.zabbix.android.monitor.data.sortProblems
 import com.zabbix.android.monitor.data.ZabbixApi
 import com.zabbix.android.monitor.data.ZabbixTime
 import kotlinx.coroutines.CancellationException
@@ -68,12 +73,15 @@ private class ProblemListState(private val settings: MonitorSettings) {
 
     private val api = ZabbixApi(settings.url, settings.token, settings.allowInsecureTls)
 
+    /** Сколько строк помещается по настройке — для счётчика в шапке. */
+    val shownLimit: Int = settings.safeLimit()
+
     var page by mutableStateOf<ProblemsPage?>(null)
         private set
 
     /** Список для отрисовки; пустой, пока не пришёл первый ответ. */
     val problems: List<Problem>
-        get() = page?.shown.orEmpty()
+        get() = page?.problems.orEmpty()
 
     var error by mutableStateOf<String?>(null)
         private set
@@ -91,7 +99,7 @@ private class ProblemListState(private val settings: MonitorSettings) {
         loading = true
         if (userInitiated) refreshing = true
         try {
-            page = withContext(Dispatchers.IO) { api.problems(limit = settings.safeLimit()) }
+            page = withContext(Dispatchers.IO) { api.problems() }
             error = null
             updatedAt = System.currentTimeMillis()
         } catch (e: CancellationException) {
@@ -107,13 +115,23 @@ private class ProblemListState(private val settings: MonitorSettings) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ProblemListScreen(settings: MonitorSettings, onOpenSettings: () -> Unit) {
+fun ProblemListScreen(
+    settings: MonitorSettings,
+    sort: ProblemSort,
+    onSortChange: (ProblemSort) -> Unit,
+    onOpenSettings: () -> Unit,
+) {
     val state = remember(settings) { ProblemListState(settings) }
     val scope = rememberCoroutineScope()
     val lifecycleOwner = LocalLifecycleOwner.current
     var selected by remember { mutableStateOf<Problem?>(null) }
+    var sortMenuOpen by remember { mutableStateOf(false) }
 
     val refresh: () -> Unit = { scope.launch { state.refresh(userInitiated = true) } }
+
+    val visible = remember(state.page, sort, settings.safeLimit()) {
+        sortProblems(state.problems, sort).take(settings.safeLimit())
+    }
 
     // Первый запрос при входе на экран.
     LaunchedEffect(state) { state.refresh() }
@@ -132,7 +150,44 @@ fun ProblemListScreen(settings: MonitorSettings, onOpenSettings: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(problemsTitle(state)) },
+                title = {
+                    Box {
+                        Text(
+                            text = problemsTitle(state),
+                            modifier = Modifier
+                                .clickable { sortMenuOpen = true }
+                                .padding(vertical = 8.dp),
+                        )
+                        DropdownMenu(
+                            expanded = sortMenuOpen,
+                            onDismissRequest = { sortMenuOpen = false },
+                        ) {
+                            Text(
+                                text = stringResource(R.string.sort_title),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            )
+                            sortOptions().forEach { (option, label) ->
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    onClick = {
+                                        onSortChange(option)
+                                        sortMenuOpen = false
+                                    },
+                                    trailingIcon = {
+                                        if (option == sort) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Check,
+                                                contentDescription = null,
+                                            )
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                    }
+                },
                 actions = {
                     IconButton(onClick = refresh, enabled = !state.loading) {
                         Icon(
@@ -156,11 +211,11 @@ fun ProblemListScreen(settings: MonitorSettings, onOpenSettings: () -> Unit) {
             modifier = Modifier.fillMaxSize().padding(innerPadding),
         ) {
             when {
-                state.problems.isEmpty() && state.loading -> {
+                visible.isEmpty() && state.loading -> {
                     CircularProgressIndicator(Modifier.align(Alignment.Center))
                 }
 
-                state.problems.isEmpty() && state.error != null -> {
+                visible.isEmpty() && state.error != null -> {
                     MessagePane(
                         message = state.error.orEmpty(),
                         actionText = stringResource(R.string.retry),
@@ -168,7 +223,7 @@ fun ProblemListScreen(settings: MonitorSettings, onOpenSettings: () -> Unit) {
                     )
                 }
 
-                state.problems.isEmpty() -> {
+                visible.isEmpty() -> {
                     MessagePane(
                         message = stringResource(R.string.all_good),
                         actionText = stringResource(R.string.update),
@@ -180,7 +235,7 @@ fun ProblemListScreen(settings: MonitorSettings, onOpenSettings: () -> Unit) {
                     Column(Modifier.fillMaxSize()) {
                         state.error?.let { ErrorBanner(it) }
                         LazyColumn(Modifier.fillMaxSize()) {
-                            items(state.problems, key = { it.eventid }) { problem ->
+                            items(visible, key = { it.eventid }) { problem ->
                                 ProblemRow(problem, onClick = { selected = problem })
                             }
                         }
@@ -202,8 +257,22 @@ fun ProblemListScreen(settings: MonitorSettings, onOpenSettings: () -> Unit) {
 private fun problemsTitle(state: ProblemListState): String {
     val page = state.page ?: return if (state.loading) "…" else "—"
     val plus = if (page.totalKnown) "" else "+"
-    return "${page.shown.size}/${page.total}$plus"
+    val shown = minOf(page.total, state.shownLimit)
+    return "$shown/${page.total}$plus"
 }
+
+/** Пункты меню сортировки: подпись берём из ресурсов. */
+@Composable
+private fun sortOptions(): List<Pair<ProblemSort, String>> = listOf(
+    ProblemSort.Default to stringResource(R.string.sort_default),
+    ProblemSort.BySeverity to stringResource(R.string.sort_by_severity),
+    ProblemSort.Disaster to stringResource(R.string.severity_5),
+    ProblemSort.High to stringResource(R.string.severity_4),
+    ProblemSort.Average to stringResource(R.string.severity_3),
+    ProblemSort.Warning to stringResource(R.string.severity_2),
+    ProblemSort.Information to stringResource(R.string.severity_1),
+    ProblemSort.NotClassified to stringResource(R.string.severity_0),
+)
 
 @Composable
 private fun ProblemRow(problem: Problem, onClick: () -> Unit) {

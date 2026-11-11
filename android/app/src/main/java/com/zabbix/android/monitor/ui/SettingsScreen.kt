@@ -100,7 +100,7 @@ fun SettingsScreen(
         scope.launch {
             try {
                 val api = ZabbixApi(url, token.trim(), insecureTls)
-                withContext(Dispatchers.IO) { api.problems(limit = 1) }
+                withContext(Dispatchers.IO) { api.problems(maxFetch = 1) }
                 testOk = true
             } catch (e: CancellationException) {
                 throw e

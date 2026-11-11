@@ -48,11 +48,11 @@ class ZabbixApiTest {
             }
         }
 
-        val page = ZabbixApi("zabbix.local", "token", false, transport).problems(limit = 50)
+        val page = ZabbixApi("zabbix.local", "token", false, transport).problems()
 
-        assertEquals(1, page.shown.size)
+        assertEquals(1, page.problems.size)
         assertEquals(1, page.total)
-        assertEquals("host-a", page.shown[0].hostName)
+        assertEquals("host-a", page.problems[0].hostName)
 
         val (problemMethod, problemParams) = transport.requests.first()
         assertEquals("problem.get", problemMethod)
@@ -97,9 +97,9 @@ class ZabbixApiTest {
 
         val page = ZabbixApi("zabbix.local", "token", false, transport).problems()
 
-        assertEquals(1, page.shown.size)
-        assertEquals("1", page.shown[0].eventid)
-        assertEquals("host-a", page.shown[0].hostName)
+        assertEquals(1, page.problems.size)
+        assertEquals("1", page.problems[0].eventid)
+        assertEquals("host-a", page.problems[0].hostName)
     }
 
     @Test
@@ -120,8 +120,8 @@ class ZabbixApiTest {
 
         val page = ZabbixApi("zabbix.local", "token", false, transport).problems()
 
-        assertEquals(1, page.shown.size)
-        assertEquals("9", page.shown[0].eventid)
+        assertEquals(1, page.problems.size)
+        assertEquals("9", page.problems[0].eventid)
     }
 
     @Test
@@ -137,34 +137,11 @@ class ZabbixApiTest {
             }
         }
 
-        val problem = ZabbixApi("zabbix.local", "token", false, transport).problems().shown.single()
+        val problem = ZabbixApi("zabbix.local", "token", false, transport).problems().problems.single()
 
         assertTrue(problem.resolved)
         assertEquals(2, problem.severityLevel)
         assertEquals("host-a", problem.hostName)
-    }
-
-    @Test
-    fun `лимит режет показ, но не меняет общее количество`() {
-        val problems = (1..3).joinToString(",") {
-            """{"eventid":"$it","objectid":"${100 + it}","name":"P$it","clock":"170000000$it","severity":"3"}"""
-        }
-        val hosts = (1..3).joinToString(",") {
-            """{"triggerid":"${100 + it}","hosts":[{"name":"host-$it"}]}"""
-        }
-        val transport = FakeTransport { method, _ ->
-            when (method) {
-                "problem.get" -> ok("[$problems]")
-                "trigger.get" -> ok("[$hosts]")
-                else -> error("неожиданный метод $method")
-            }
-        }
-
-        val page = ZabbixApi("zabbix.local", "token", false, transport).problems(limit = 2)
-
-        assertEquals(2, page.shown.size)
-        assertEquals(3, page.total)
-        assertTrue(page.totalKnown)
     }
 
     @Test
@@ -188,9 +165,9 @@ class ZabbixApiTest {
         }
 
         val page = ZabbixApi("zabbix.local", "token", false, transport)
-            .problems(limit = 1, maxFetch = 2)
+            .problems(maxFetch = 2)
 
-        assertEquals(1, page.shown.size)
+        assertEquals(2, page.problems.size)
         assertEquals(2, page.total)
         assertFalse(page.totalKnown)
     }

@@ -38,17 +38,18 @@ data class Problem(
 }
 
 /**
- * Результат опроса: что показываем и сколько всего нашлось.
+ * Результат опроса: все проблемы, видимые как на странице Problems.
  *
- * `total` — сколько проблем видно после всех фильтров страницы Problems,
- * `shown` — срез по лимиту отображения. `totalKnown = false` означает, что
- * список упёрся в предел одного запроса и `total` — только нижняя оценка.
+ * Лимит отображения здесь не применяется — это забота экрана, чтобы
+ * сортировка работала по всему списку, а не по уже обрезанному.
+ * `totalKnown = false` означает, что список упёрся в предел одного запроса.
  */
 data class ProblemsPage(
-    val shown: List<Problem>,
-    val total: Int,
+    val problems: List<Problem>,
     val totalKnown: Boolean,
-)
+) {
+    val total: Int get() = problems.size
+}
 
 @Serializable
 data class Trigger(
