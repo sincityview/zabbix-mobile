@@ -25,8 +25,8 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        // тот же applicationId, что у Go-версии: на устройстве приложение
-        // обновится поверх старого, а не встанет вторым (ключ подписи тот же).
+        // applicationId не менялся с первых версий: при том же ключе подписи
+        // приложение обновляется поверх установленного, а не встаёт вторым.
         applicationId = "com.zabbix.android.monitor"
         minSdk = 26
         targetSdk = 36

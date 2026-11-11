@@ -1,6 +1,4 @@
-.git/
-temp/
-fyne-cross/
-keys/
+# локальные артефакты разработки
 .workdir/
+temp/
 .mimocode/

@@ -6,9 +6,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Те же случаи, что в Go-версии (data/conn_client_test.go, TestNormalizeURL):
- * если поведение разойдётся, сохранённые настройки и снапшот перестанут
- * совпадать по ключу.
+ * Случаи, важные для совместимости: если нормализация разойдётся, адреса из
+ * сохранённых настроек перестанут попадать в API.
  */
 class ZabbixUrlTest {
 
