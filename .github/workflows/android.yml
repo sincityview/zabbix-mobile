@@ -116,7 +116,8 @@ jobs:
             "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" | grep -E "Verified using v[123] |Number of signers|certificate DN" | sed 's/^/    /'
             echo "    zipalign: $("$BUILD_TOOLS/zipalign" -c 4 "$APK" && echo ok)"
             CERT=$("$BUILD_TOOLS/apksigner" verify --print-certs "$APK" | grep "certificate DN" | head -1 | sed 's/.*: //')
-            echo "::notice::$APK — $SIZE байт, sha256=$HASH, cert=$CERT"
+            CERT_SHA=$("$BUILD_TOOLS/apksigner" verify --print-certs "$APK" | grep "certificate SHA-256 digest" | head -1 | sed 's/.*: //')
+            echo "::notice::$APK — $SIZE байт, sha256=$HASH, cert=$CERT, cert-sha256=$CERT_SHA"
             echo "| $(basename "$APK") | $SIZE | \`$HASH\` | $CERT |" >> "$GITHUB_STEP_SUMMARY"
           done
 
