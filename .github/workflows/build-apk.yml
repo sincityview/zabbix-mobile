@@ -2,81 +2,159 @@ name: Build and Release
 
 on:
   push:
+    branches:
+      - dev
+      - master
+      - main
     tags:
       - 'v*'
+  pull_request:
+  workflow_dispatch:
+
+# Один прогон на ветку/тег: новый пуш отменяет предыдущий.
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
 
 jobs:
-  build-android:
+  build:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v7
 
-      - name: Extract version
-        id: get_version
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
-
-      - name: Set up golang
-        uses: actions/setup-go@v5
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
         with:
-          go-version: '1.24'
-          cache: true
+          distribution: temurin
+          java-version: '21'
 
-      - name: Install Linux GUI build dependencies
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      # Ключ подписи кладём из секрета. Без секрета release подписывается
+      # debug-ключом (см. app/build.gradle.kts) — сборка в PR не ломается.
+      - name: Prepare signing key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libgl1-mesa-dev xorg-dev
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::notice::Секрет ANDROID_KEYSTORE_BASE64 не задан — release будет подписан debug-ключом"
+            exit 0
+          fi
+          mkdir -p keystore
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > keystore/release.jks
+          ls -l keystore/release.jks
 
-      - name: Vet and test
+      # AGP докачивает нужную платформу сам, но только при принятых лицензиях —
+      # на раннере они приняты лишь для предустановленных компонентов.
+      - name: Ensure Android platform 36
         run: |
-          go vet ./...
-          go test ./... -race
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          if [ ! -d "$SDK/platforms/android-36" ]; then
+            yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" > /dev/null
+          fi
+          echo "SDK=$SDK"
+          ls "$SDK/platforms"
 
-      - name: Install fyne-cross
-        run: go install github.com/fyne-io/fyne-cross@v1.6.3
-
-      - name: Build APK
+      - name: Version
+        id: version
         run: |
-          fyne-cross android \
-            -app-id com.zabbix.android.monitor \
-            -icon icon.png \
-            -app-version "${{ steps.get_version.outputs.VERSION }}" \
-            -app-build ${{ github.run_number }} \
-            -tags no_emoji \
-            -arch arm64 \
-            -name zabbix
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            echo "name=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=0.1.0-dev.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          fi
+          # Смещение 10000 нужно, чтобы версия была выше установленной
+          # Fyne-сборки (у 0.8.3 versionCode 13): иначе Android отказывается
+          # обновлять приложение и пишет «пакет недействителен».
+          echo "code=$((10000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_OUTPUT"
 
-      - name: Show APK size
+      - name: Lint, test, build
+        env:
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+          VERSION_CODE: ${{ steps.version.outputs.code }}
+          KEYSTORE_FILE: ${{ github.workspace }}/android/keystore/release.jks
+          KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
-          APK_PATH=$(find fyne-cross/dist -name "*.apk" | head -1)
-          echo "APK_PATH=$APK_PATH"
-          ls -lh "$APK_PATH"
-          unzip -l "$APK_PATH" | sort -k1 -n -r | head -8
+          set -o pipefail
+          ./gradlew --stacktrace lint testDebugUnitTest assembleRelease assembleDebug 2>&1 | tee gradle.log
 
-      - name: Sign APK
+      # Логи приватных workflow недоступны без прав администратора, поэтому
+      # ошибку сборки выносим в аннотацию — она видна и без доступа к логам.
+      - name: Report Gradle failure
+        if: failure()
         run: |
-          VERSION=${{ steps.get_version.outputs.VERSION }}
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > release.jks
-          ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}
-          BUILD_TOOLS_DIR=$(ls -d $ANDROID_HOME/build-tools/* 2>/dev/null | tail -1)
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "BUILD_TOOLS_DIR=$BUILD_TOOLS_DIR"
-          APK_PATH=$(find fyne-cross/dist -name "*.apk" | head -1)
-          echo "APK_PATH=$APK_PATH"
-          $BUILD_TOOLS_DIR/zipalign -v -p 4 "$APK_PATH" zabbix-aligned.apk
-          $BUILD_TOOLS_DIR/apksigner sign --ks release.jks \
-            --ks-key-alias ${{ secrets.ANDROID_KEY_ALIAS }} \
-            --ks-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
-            --key-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
-            --out "zabbix-$VERSION.apk" zabbix-aligned.apk
-          $BUILD_TOOLS_DIR/apksigner verify "zabbix-$VERSION.apk"
+          echo "::error::$(sed -n '/What went wrong/,$p' gradle.log | head -30 | tr '\n' ' ')"
+          echo "--- последние строки ---"
+          tail -40 gradle.log
 
-      - name: Create release
-        uses: softprops/action-gh-release@v2
+      # Проверяем, что APK действительно подписан и не побился: без этого
+      # «Приложение не установлено (пакет недействителен)» на телефоне
+      # невозможно отличить от испорченной загрузки.
+      - name: Verify APK signatures
+        run: |
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          BUILD_TOOLS=$(ls -d "$SDK"/build-tools/* | tail -1)
+          {
+            echo "### APK"
+            echo ""
+            echo "| файл | размер | sha256 | подпись |"
+            echo "|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for APK in $(find app/build/outputs/apk -name '*.apk' | sort); do
+            SIZE=$(stat -c%s "$APK")
+            HASH=$(sha256sum "$APK" | cut -d' ' -f1)
+            echo "=== $APK ($SIZE байт) ==="
+            sha256sum "$APK"
+            "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" | grep -E "Verified using v[123] |Number of signers|certificate DN" | sed 's/^/    /'
+            echo "    zipalign: $("$BUILD_TOOLS/zipalign" -c 4 "$APK" && echo ok)"
+            CERT=$("$BUILD_TOOLS/apksigner" verify --print-certs "$APK" | grep "certificate DN" | head -1 | sed 's/.*: //')
+            CERT_SHA=$("$BUILD_TOOLS/apksigner" verify --print-certs "$APK" | grep "certificate SHA-256 digest" | head -1 | sed 's/.*: //')
+            echo "::notice::$APK — $SIZE байт, sha256=$HASH, cert=$CERT, cert-sha256=$CERT_SHA"
+            echo "| $(basename "$APK") | $SIZE | \`$HASH\` | $CERT |" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v7
         with:
-          files: zabbix-${{ steps.get_version.outputs.VERSION }}.apk
-          name: Release ${{ steps.get_version.outputs.VERSION }}
+          name: zabbix-monitor-apk
+          path: android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+
+      # Каждый пуш в dev обновляет предрелиз dev-latest: с телефона APK
+      # скачивается одной ссылкой, без распаковки zip-артефакта.
+      - name: Publish dev-latest prerelease
+        if: ${{ github.ref == 'refs/heads/dev' }}
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: dev-latest
+          name: dev-latest (сборка ${{ github.run_number }})
+          prerelease: true
+          files: |
+            android/app/build/outputs/apk/release/app-release.apk
+            android/app/build/outputs/apk/debug/app-debug.apk
+
+      # Тег v* — релиз с APK (обновление поверх прежних версий: versionCode
+      # считается как 10000 + номер прогона, подпись тем же ключом).
+      - name: Release APK
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        uses: softprops/action-gh-release@v3
+        with:
+          files: android/app/build/outputs/apk/release/app-release.apk
           tag_name: ${{ github.ref_name }}
+          body: |
+            Zabbix Monitor ${{ github.ref_name }}
+
+            Установка: скачайте `app-release.apk` и откройте на телефоне
+            (Android 8.0 и новее). Обновление поверх предыдущей версии
+            проходит без удаления приложения.

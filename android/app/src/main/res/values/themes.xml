@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Базовая тема нужна только для окна до первой отрисовки Compose: тёмная,
+        чтобы не было белой вспышки при запуске (приложение живёт в тёмной теме).
+    -->
+    <style name="Theme.ZabbixMonitor" parent="android:Theme.Material.NoActionBar" />
+</resources>
