@@ -84,7 +84,7 @@ jobs:
           KEY_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
           set -o pipefail
-          ./gradlew --stacktrace lint testDebugUnitTest assembleRelease 2>&1 | tee gradle.log
+          ./gradlew --stacktrace lint testDebugUnitTest assembleRelease assembleDebug 2>&1 | tee gradle.log
 
       # Логи приватных workflow недоступны без прав администратора, поэтому
       # ошибку сборки выносим в аннотацию — она видна и без доступа к логам.
@@ -95,17 +95,36 @@ jobs:
           echo "--- последние строки ---"
           tail -40 gradle.log
 
-      - name: Show APK size
+      # Проверяем, что APK действительно подписан и не побился: без этого
+      # «Приложение не установлено (пакет недействителен)» на телефоне
+      # невозможно отличить от испорченной загрузки.
+      - name: Verify APK signatures
         run: |
-          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
-          ls -lh "$APK"
-          unzip -l "$APK" | sort -k1 -n -r | head -8
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          BUILD_TOOLS=$(ls -d "$SDK"/build-tools/* | tail -1)
+          {
+            echo "### APK"
+            echo ""
+            echo "| файл | размер | sha256 | подпись |"
+            echo "|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for APK in $(find app/build/outputs/apk -name '*.apk' | sort); do
+            SIZE=$(stat -c%s "$APK")
+            HASH=$(sha256sum "$APK" | cut -d' ' -f1)
+            echo "=== $APK ($SIZE байт) ==="
+            sha256sum "$APK"
+            "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" | grep -E "Verified using v[123] |Number of signers|certificate DN" | sed 's/^/    /'
+            echo "    zipalign: $("$BUILD_TOOLS/zipalign" -c 4 "$APK" && echo ok)"
+            CERT=$("$BUILD_TOOLS/apksigner" verify --print-certs "$APK" | grep "certificate DN" | head -1 | sed 's/.*: //')
+            echo "::notice::$APK — $SIZE байт, sha256=$HASH, cert=$CERT"
+            echo "| $(basename "$APK") | $SIZE | \`$HASH\` | $CERT |" >> "$GITHUB_STEP_SUMMARY"
+          done
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v7
         with:
           name: zabbix-monitor-apk
-          path: android/app/build/outputs/apk/release/*.apk
+          path: android/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
 
       # Релиз пока делает Go-воркфлоу (build-apk.yml). Когда Android-версия
