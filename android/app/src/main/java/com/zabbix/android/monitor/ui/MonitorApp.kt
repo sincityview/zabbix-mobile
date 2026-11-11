@@ -1,0 +1,47 @@
+package com.zabbix.android.monitor.ui
+
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import com.zabbix.android.monitor.data.MonitorSettings
+import com.zabbix.android.monitor.data.SettingsStore
+import com.zabbix.android.monitor.data.ZabbixUrl
+
+/**
+ * Два экрана без навигационной библиотеки: пока настроек нет — настройки,
+ * иначе список проблем. Настройки открываются кнопкой в шапке списка.
+ */
+@Composable
+fun MonitorApp() {
+    val context = LocalContext.current
+    val store = remember(context) { SettingsStore(context) }
+
+    var settings by remember { mutableStateOf(store.load()) }
+    var editing by remember { mutableStateOf(!settings.isConfigured) }
+
+    if (editing) {
+        SettingsScreen(
+            initial = settings,
+            canCancel = settings.isConfigured,
+            onCancel = { editing = false },
+            onSaved = { saved ->
+                val normalized = MonitorSettings(
+                    url = ZabbixUrl.normalize(saved.url),
+                    token = saved.token.trim(),
+                    allowInsecureTls = saved.allowInsecureTls,
+                )
+                store.save(normalized)
+                settings = normalized
+                editing = false
+            },
+        )
+    } else {
+        ProblemListScreen(
+            settings = settings,
+            onOpenSettings = { editing = true },
+        )
+    }
+}

@@ -1,0 +1,18 @@
+# Gradle и сборка
+.gradle/
+build/
+app/build/
+.kotlin/
+
+# Локальные пути к Android SDK (у каждого свои)
+local.properties
+
+# Ключи подписи кладём только в CI из секретов, в репозиторий — никогда
+*.jks
+*.keystore
+keystore/
+
+# IDE
+.idea/
+*.iml
+captures/

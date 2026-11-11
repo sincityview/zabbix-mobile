@@ -1,0 +1,104 @@
+name: Android APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+  workflow_dispatch:
+
+# Один прогон на ветку/тег: новый пуш отменяет предыдущий.
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      # Ключ подписи кладём из секрета. Без секрета release подписывается
+      # debug-ключом (см. app/build.gradle.kts) — сборка в PR не ломается.
+      - name: Prepare signing key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::notice::Секрет ANDROID_KEYSTORE_BASE64 не задан — release будет подписан debug-ключом"
+            exit 0
+          fi
+          mkdir -p keystore
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > keystore/release.jks
+          ls -l keystore/release.jks
+
+      # AGP докачивает нужную платформу сам, но только при принятых лицензиях —
+      # на раннере они приняты лишь для предустановленных компонентов.
+      - name: Ensure Android platform 36
+        run: |
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          if [ ! -d "$SDK/platforms/android-36" ]; then
+            yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" > /dev/null
+          fi
+          echo "SDK=$SDK"
+          ls "$SDK/platforms"
+
+      - name: Version
+        id: version
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            echo "name=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=0.1.0-dev" >> "$GITHUB_OUTPUT"
+          fi
+          echo "code=${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+
+      - name: Lint, test, build
+        env:
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+          VERSION_CODE: ${{ steps.version.outputs.code }}
+          KEYSTORE_FILE: ${{ github.workspace }}/android/keystore/release.jks
+          KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: ./gradlew --stacktrace lint testDebugUnitTest assembleRelease
+
+      - name: Show APK size
+        run: |
+          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          ls -lh "$APK"
+          unzip -l "$APK" | sort -k1 -n -r | head -8
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: zabbix-monitor-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
+      # Релиз пока делает Go-воркфлоу (build-apk.yml). Когда Android-версия
+      # заменит Go: поставьте переменную репозитория ANDROID_RELEASE=true
+      # и удалите старый воркфлоу.
+      - name: Attach APK to release
+        if: ${{ startsWith(github.ref, 'refs/tags/v') && vars.ANDROID_RELEASE == 'true' }}
+        uses: softprops/action-gh-release@v3
+        with:
+          files: android/app/build/outputs/apk/release/*.apk
+          tag_name: ${{ github.ref_name }}
