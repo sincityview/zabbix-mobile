@@ -82,7 +82,18 @@ jobs:
           KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-        run: ./gradlew --stacktrace lint testDebugUnitTest assembleRelease
+        run: |
+          set -o pipefail
+          ./gradlew --stacktrace lint testDebugUnitTest assembleRelease 2>&1 | tee gradle.log
+
+      # Логи приватных workflow недоступны без прав администратора, поэтому
+      # ошибку сборки выносим в аннотацию — она видна и без доступа к логам.
+      - name: Report Gradle failure
+        if: failure()
+        run: |
+          echo "::error::$(sed -n '/What went wrong/,$p' gradle.log | head -30 | tr '\n' ' ')"
+          echo "--- последние строки ---"
+          tail -40 gradle.log
 
       - name: Show APK size
         run: |
