@@ -128,6 +128,19 @@ jobs:
           path: android/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
 
+      # Каждый пуш в dev обновляет предрелиз dev-latest: с телефона APK
+      # скачивается одной ссылкой, без распаковки zip-артефакта.
+      - name: Publish dev-latest prerelease
+        if: ${{ github.ref == 'refs/heads/dev' }}
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: dev-latest
+          name: dev-latest (сборка ${{ github.run_number }})
+          prerelease: true
+          files: |
+            android/app/build/outputs/apk/release/app-release.apk
+            android/app/build/outputs/apk/debug/app-debug.apk
+
       # Релиз пока делает Go-воркфлоу (build-apk.yml). Когда Android-версия
       # заменит Go: поставьте переменную репозитория ANDROID_RELEASE=true
       # и удалите старый воркфлоу.
