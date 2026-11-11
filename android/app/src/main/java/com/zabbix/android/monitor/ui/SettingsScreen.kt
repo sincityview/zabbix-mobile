@@ -7,8 +7,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -27,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.zabbix.android.monitor.R
@@ -49,6 +53,7 @@ fun SettingsScreen(
     var url by rememberSaveable { mutableStateOf(initial.url) }
     var token by rememberSaveable { mutableStateOf(initial.token) }
     var insecureTls by rememberSaveable { mutableStateOf(initial.allowInsecureTls) }
+    var limitText by rememberSaveable { mutableStateOf(initial.safeLimit().toString()) }
 
     var testing by remember { mutableStateOf(false) }
     /** null — ещё не проверяли, true/false — результат последней проверки. */
@@ -56,7 +61,9 @@ fun SettingsScreen(
     var testError by remember { mutableStateOf("") }
 
     val scope = rememberCoroutineScope()
-    val canSave = url.isNotBlank() && token.isNotBlank()
+    val limit = limitText.toIntOrNull()
+    val limitValid = limit != null && limit in 1..ZabbixApi.MAX_LIMIT
+    val canSave = url.isNotBlank() && token.isNotBlank() && limitValid
 
     Scaffold(
         topBar = {
@@ -90,6 +97,25 @@ fun SettingsScreen(
                 label = { Text(stringResource(R.string.token)) },
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            OutlinedTextField(
+                value = limitText,
+                onValueChange = { input -> limitText = input.filter { it.isDigit() }.take(5) },
+                label = { Text(stringResource(R.string.problem_limit)) },
+                singleLine = true,
+                isError = !limitValid,
+                supportingText = {
+                    Text(
+                        if (limitValid) {
+                            stringResource(R.string.problem_limit_hint)
+                        } else {
+                            stringResource(R.string.error_invalid_number)
+                        },
+                    )
+                },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth(),
             )
 
@@ -134,7 +160,7 @@ fun SettingsScreen(
                     Text(stringResource(if (testing) R.string.checking else R.string.test_connection))
                 }
 
-                Button(
+                OutlinedButton(
                     enabled = canSave,
                     onClick = {
                         onSaved(
@@ -142,10 +168,16 @@ fun SettingsScreen(
                                 url = ZabbixUrl.normalize(url),
                                 token = token.trim(),
                                 allowInsecureTls = insecureTls,
+                                limit = limit ?: initial.limit,
                             ),
                         )
                     },
                 ) {
+                    Icon(
+                        imageVector = Icons.Filled.Check,
+                        contentDescription = null,
+                        modifier = Modifier.padding(end = 8.dp),
+                    )
                     Text(stringResource(R.string.save))
                 }
             }

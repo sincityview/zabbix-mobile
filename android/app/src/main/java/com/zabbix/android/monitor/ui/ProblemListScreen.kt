@@ -19,7 +19,12 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -44,6 +49,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.zabbix.android.monitor.R
 import com.zabbix.android.monitor.data.MonitorSettings
 import com.zabbix.android.monitor.data.Problem
+import com.zabbix.android.monitor.data.ProblemsPage
 import com.zabbix.android.monitor.data.ZabbixApi
 import com.zabbix.android.monitor.data.ZabbixTime
 import kotlinx.coroutines.CancellationException
@@ -63,8 +69,13 @@ private class ProblemListState(private val settings: MonitorSettings) {
 
     private val api = ZabbixApi(settings.url, settings.token, settings.allowInsecureTls)
 
-    var problems by mutableStateOf<List<Problem>>(emptyList())
+    var page by mutableStateOf<ProblemsPage?>(null)
         private set
+
+    /** Список для отрисовки; пустой, пока не пришёл первый ответ. */
+    val problems: List<Problem>
+        get() = page?.shown.orEmpty()
+
     var error by mutableStateOf<String?>(null)
         private set
     var loading by mutableStateOf(false)
@@ -72,17 +83,11 @@ private class ProblemListState(private val settings: MonitorSettings) {
     var updatedAt by mutableStateOf(0L)
         private set
 
-    /** Сервер отдал ровно limit проблем — значит, показаны не все. */
-    var capped by mutableStateOf(false)
-        private set
-
     suspend fun refresh() {
         if (loading) return
         loading = true
         try {
-            val fetched = withContext(Dispatchers.IO) { api.problems() }
-            problems = fetched
-            capped = fetched.size >= ZabbixApi.DEFAULT_LIMIT
+            page = withContext(Dispatchers.IO) { api.problems(limit = settings.safeLimit()) }
             error = null
             updatedAt = System.currentTimeMillis()
         } catch (e: CancellationException) {
@@ -123,11 +128,17 @@ fun ProblemListScreen(settings: MonitorSettings, onOpenSettings: () -> Unit) {
             TopAppBar(
                 title = { Text(problemsTitle(state)) },
                 actions = {
-                    TextButton(onClick = refresh, enabled = !state.loading) {
-                        Text(stringResource(R.string.update))
+                    IconButton(onClick = refresh, enabled = !state.loading) {
+                        Icon(
+                            imageVector = Icons.Filled.Refresh,
+                            contentDescription = stringResource(R.string.update),
+                        )
                     }
-                    TextButton(onClick = onOpenSettings) {
-                        Text(stringResource(R.string.settings))
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(
+                            imageVector = Icons.Filled.Settings,
+                            contentDescription = stringResource(R.string.settings),
+                        )
                     }
                 },
             )
@@ -174,14 +185,14 @@ fun ProblemListScreen(settings: MonitorSettings, onOpenSettings: () -> Unit) {
     }
 }
 
-@Composable
-private fun problemsTitle(state: ProblemListState): String = when {
-    state.problems.isNotEmpty() && state.capped ->
-        stringResource(R.string.problems_count_capped, state.problems.size)
-
-    state.problems.isNotEmpty() -> stringResource(R.string.problems_count, state.problems.size)
-    state.loading -> stringResource(R.string.loading)
-    else -> stringResource(R.string.app_name)
+/**
+ * Счётчик в шапке: «показано / всего», без слов. Плюс означает, что проблем
+ * на сервере больше, чем мы просматриваем за один опрос.
+ */
+private fun problemsTitle(state: ProblemListState): String {
+    val page = state.page ?: return if (state.loading) "…" else "—"
+    val plus = if (page.totalKnown) "" else "+"
+    return "${page.shown.size}/${page.total}$plus"
 }
 
 @Composable

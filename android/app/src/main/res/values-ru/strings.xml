@@ -1,9 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Zabbix Monitor</string>
-
-    <string name="problems_count">Проблем: %1$d</string>
-    <string name="problems_count_capped">Проблем: %1$d+</string>
     <string name="loading">Загрузка…</string>
     <string name="all_good">Все системы в норме!</string>
     <string name="update">Обновить</string>
@@ -14,6 +11,9 @@
     <string name="settings">Настройки</string>
     <string name="url_server">URL сервера</string>
     <string name="token">Токен</string>
+    <string name="problem_limit">Лимит отображения проблем</string>
+    <string name="problem_limit_hint">Сколько проблем показывать в списке</string>
+    <string name="error_invalid_number">Введите число</string>
     <string name="self_signed">Самоподписанный сертификат</string>
     <string name="save">Сохранить</string>
     <string name="cancel">Отмена</string>

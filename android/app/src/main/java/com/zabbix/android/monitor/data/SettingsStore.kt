@@ -7,12 +7,17 @@ data class MonitorSettings(
     val url: String = "",
     val token: String = "",
     val allowInsecureTls: Boolean = false,
+    /** Сколько проблем показывать в списке. */
+    val limit: Int = ZabbixApi.DEFAULT_LIMIT,
 ) {
     val isConfigured: Boolean
         get() = ZabbixUrl.normalize(url).isNotEmpty() && token.isNotBlank()
 
     /** Идемпотентное представление для ключа кеша: сервер + токен. */
     fun cacheKey(): String = ZabbixUrl.normalize(url) + "|" + token
+
+    /** Лимит в допустимых границах: мусор в настройках не должен ломать экран. */
+    fun safeLimit(): Int = limit.coerceIn(1, ZabbixApi.MAX_LIMIT)
 }
 
 class SettingsStore(context: Context) {
@@ -24,6 +29,8 @@ class SettingsStore(context: Context) {
         url = prefs.getString(KEY_URL, "").orEmpty(),
         token = prefs.getString(KEY_TOKEN, "").orEmpty(),
         allowInsecureTls = prefs.getBoolean(KEY_INSECURE_TLS, false),
+        limit = prefs.getInt(KEY_LIMIT, ZabbixApi.DEFAULT_LIMIT)
+            .coerceIn(1, ZabbixApi.MAX_LIMIT),
     )
 
     fun save(settings: MonitorSettings) {
@@ -31,6 +38,7 @@ class SettingsStore(context: Context) {
             .putString(KEY_URL, ZabbixUrl.normalize(settings.url))
             .putString(KEY_TOKEN, settings.token.trim())
             .putBoolean(KEY_INSECURE_TLS, settings.allowInsecureTls)
+            .putInt(KEY_LIMIT, settings.safeLimit())
             .apply()
     }
 
@@ -43,5 +51,6 @@ class SettingsStore(context: Context) {
         const val KEY_URL = "url"
         const val KEY_TOKEN = "token"
         const val KEY_INSECURE_TLS = "insecure_tls"
+        const val KEY_LIMIT = "limit"
     }
 }

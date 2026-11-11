@@ -36,11 +36,22 @@ class ZabbixApi(
 ) {
     private val endpoint: String = ZabbixUrl.normalize(url)
 
-    /** Забирает проблемы с именами хостов. */
-    fun problems(limit: Int = DEFAULT_LIMIT): List<Problem> {
-        val unique = dedupeByTrigger(fetchProblems(limit))
-        if (unique.isEmpty()) return emptyList()
-        return resolveHosts(unique)
+    /**
+     * Забирает проблемы с именами хостов.
+     *
+     * @param limit сколько строк показывать (настройка «лимит отображения»);
+     * @param maxFetch предел одного запроса — столько проблем максимум
+     *        просматривается за опрос, чтобы не тянуть бесконечный список.
+     */
+    fun problems(limit: Int = DEFAULT_LIMIT, maxFetch: Int = MAX_FETCH): ProblemsPage {
+        val fetch = maxOf(limit, maxFetch)
+        val raw = fetchProblems(fetch)
+        val visible = if (raw.isEmpty()) emptyList() else resolveHosts(dedupeByTrigger(raw))
+        return ProblemsPage(
+            shown = visible.take(limit),
+            total = visible.size,
+            totalKnown = raw.size < fetch,
+        )
     }
 
     /**
@@ -122,8 +133,18 @@ class ZabbixApi(
     }
 
     companion object {
-        /** Сколько проблем запрашиваем за один опрос; на экране видно, что список обрезан. */
-        const val DEFAULT_LIMIT = 500
+        /** Сколько проблем показываем по умолчанию (меняется в настройках). */
+        const val DEFAULT_LIMIT = 100
+
+        /** Верхняя граница настройки лимита. */
+        const val MAX_LIMIT = 10_000
+
+        /**
+         * Сколько проблем максимум просматриваем за один опрос: `total` в
+         * счётчике должен быть честным, поэтому список забирается целиком,
+         * а лимит отображения режет уже готовый список.
+         */
+        const val MAX_FETCH = 2_000
 
         /** Zabbix отдаёт не больше 500 id за один trigger.get на практике. */
         private const val TRIGGER_CHUNK = 500

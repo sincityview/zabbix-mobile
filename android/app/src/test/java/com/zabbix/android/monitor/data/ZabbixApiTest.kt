@@ -14,7 +14,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Транспорт-заглушка: запоминает запросы и отдаёт заготовленные ответы. */
-private class FakeTransport(private val handler: (String) -> String) : HttpTransport {
+private class FakeTransport(private val handler: (String, JsonObject) -> String) : HttpTransport {
     val requests = mutableListOf<Pair<String, JsonObject>>()
     val bodies = mutableListOf<String>()
 
@@ -24,7 +24,7 @@ private class FakeTransport(private val handler: (String) -> String) : HttpTrans
         val method = envelope["method"]!!.jsonPrimitive.content
         val params = envelope["params"]!!.jsonObject
         requests.add(method to params)
-        return handler(method)
+        return handler(method, params)
     }
 }
 
@@ -37,7 +37,7 @@ class ZabbixApiTest {
 
     @Test
     fun `problem_get спрашивает то же, что страница Problems`() {
-        val transport = FakeTransport { method ->
+        val transport = FakeTransport { method, _ ->
             when (method) {
                 "problem.get" -> ok(
                     """[{"eventid":"1","objectid":"100","name":"ICMP down","clock":"1700000000",
@@ -48,17 +48,20 @@ class ZabbixApiTest {
             }
         }
 
-        val problems = ZabbixApi("zabbix.local", "token", false, transport).problems(limit = 50)
+        val page = ZabbixApi("zabbix.local", "token", false, transport).problems(limit = 50)
 
-        assertEquals(1, problems.size)
-        assertEquals("host-a", problems[0].hostName)
+        assertEquals(1, page.shown.size)
+        assertEquals(1, page.total)
+        assertEquals("host-a", page.shown[0].hostName)
 
         val (problemMethod, problemParams) = transport.requests.first()
         assertEquals("problem.get", problemMethod)
         assertFalse("подавленные должны быть скрыты", problemParams["suppressed"]!!.jsonPrimitive.boolean)
         assertFalse("симптомы должны быть скрыты", problemParams["symptom"]!!.jsonPrimitive.boolean)
         assertTrue("недавно восстановленные нужны", problemParams["recent"]!!.jsonPrimitive.boolean)
-        assertEquals(50, problemParams["limit"]!!.jsonPrimitive.int)
+        // на сервер уходит не лимит показа, а предел просмотра: total в счётчике
+        // должен учитывать все проблемы, а не только попавшие в лимит
+        assertEquals(ZabbixApi.MAX_FETCH, problemParams["limit"]!!.jsonPrimitive.int)
         assertEquals("DESC", problemParams["sortorder"]!!.jsonPrimitive.content)
 
         val output = problemParams["output"]!!.jsonArray.map { it.jsonPrimitive.content }
@@ -78,7 +81,7 @@ class ZabbixApiTest {
 
     @Test
     fun `отбрасывает проблемы триггеров, которых нет среди monitored`() {
-        val transport = FakeTransport { method ->
+        val transport = FakeTransport { method, _ ->
             when (method) {
                 "problem.get" -> ok(
                     """[
@@ -92,16 +95,16 @@ class ZabbixApiTest {
             }
         }
 
-        val problems = ZabbixApi("zabbix.local", "token", false, transport).problems()
+        val page = ZabbixApi("zabbix.local", "token", false, transport).problems()
 
-        assertEquals(1, problems.size)
-        assertEquals("1", problems[0].eventid)
-        assertEquals("host-a", problems[0].hostName)
+        assertEquals(1, page.shown.size)
+        assertEquals("1", page.shown[0].eventid)
+        assertEquals("host-a", page.shown[0].hostName)
     }
 
     @Test
     fun `оставляет по одной проблеме на триггер`() {
-        val transport = FakeTransport { method ->
+        val transport = FakeTransport { method, _ ->
             when (method) {
                 // сервер отдаёт по eventid DESC, поэтому 9 — самая свежая
                 "problem.get" -> ok(
@@ -115,15 +118,15 @@ class ZabbixApiTest {
             }
         }
 
-        val problems = ZabbixApi("zabbix.local", "token", false, transport).problems()
+        val page = ZabbixApi("zabbix.local", "token", false, transport).problems()
 
-        assertEquals(1, problems.size)
-        assertEquals("9", problems[0].eventid)
+        assertEquals(1, page.shown.size)
+        assertEquals("9", page.shown[0].eventid)
     }
 
     @Test
     fun `помечает восстановленные проблемы`() {
-        val transport = FakeTransport { method ->
+        val transport = FakeTransport { method, _ ->
             when (method) {
                 "problem.get" -> ok(
                     """[{"eventid":"1","objectid":"100","name":"ICMP down","clock":"1700000000",
@@ -134,7 +137,7 @@ class ZabbixApiTest {
             }
         }
 
-        val problem = ZabbixApi("zabbix.local", "token", false, transport).problems().single()
+        val problem = ZabbixApi("zabbix.local", "token", false, transport).problems().shown.single()
 
         assertTrue(problem.resolved)
         assertEquals(2, problem.severityLevel)
@@ -142,8 +145,59 @@ class ZabbixApiTest {
     }
 
     @Test
+    fun `лимит режет показ, но не меняет общее количество`() {
+        val problems = (1..3).joinToString(",") {
+            """{"eventid":"$it","objectid":"${100 + it}","name":"P$it","clock":"170000000$it","severity":"3"}"""
+        }
+        val hosts = (1..3).joinToString(",") {
+            """{"triggerid":"${100 + it}","hosts":[{"name":"host-$it"}]}"""
+        }
+        val transport = FakeTransport { method, _ ->
+            when (method) {
+                "problem.get" -> ok("[$problems]")
+                "trigger.get" -> ok("[$hosts]")
+                else -> error("неожиданный метод $method")
+            }
+        }
+
+        val page = ZabbixApi("zabbix.local", "token", false, transport).problems(limit = 2)
+
+        assertEquals(2, page.shown.size)
+        assertEquals(3, page.total)
+        assertTrue(page.totalKnown)
+    }
+
+    @Test
+    fun `упёрлись в предел запроса — total помечен как неполный`() {
+        // три проблемы на сервере, но за один запрос отдаётся не больше limit
+        val problems = (1..3).map {
+            """{"eventid":"$it","objectid":"${100 + it}","name":"P$it","clock":"170000000$it","severity":"3"}"""
+        }
+        val hosts = (1..3).joinToString(",") {
+            """{"triggerid":"${100 + it}","hosts":[{"name":"host-$it"}]}"""
+        }
+        val transport = FakeTransport { method, params ->
+            when (method) {
+                "problem.get" -> {
+                    val limit = params["limit"]!!.jsonPrimitive.int
+                    ok(problems.take(limit).joinToString(",", "[", "]"))
+                }
+                "trigger.get" -> ok("[$hosts]")
+                else -> error("неожиданный метод $method")
+            }
+        }
+
+        val page = ZabbixApi("zabbix.local", "token", false, transport)
+            .problems(limit = 1, maxFetch = 2)
+
+        assertEquals(1, page.shown.size)
+        assertEquals(2, page.total)
+        assertFalse(page.totalKnown)
+    }
+
+    @Test
     fun `ошибка API приходит как ZabbixException`() {
-        val transport = FakeTransport { apiError(-32602, "Invalid params.", "bad token") }
+        val transport = FakeTransport { _, _ -> apiError(-32602, "Invalid params.", "bad token") }
 
         val error = assertThrows(ZabbixException::class.java) {
             ZabbixApi("zabbix.local", "token", false, transport).problems()

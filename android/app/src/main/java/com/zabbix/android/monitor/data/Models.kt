@@ -37,6 +37,19 @@ data class Problem(
         get() = severity.toIntOrNull()?.takeIf { it in 0..5 } ?: -1
 }
 
+/**
+ * Результат опроса: что показываем и сколько всего нашлось.
+ *
+ * `total` — сколько проблем видно после всех фильтров страницы Problems,
+ * `shown` — срез по лимиту отображения. `totalKnown = false` означает, что
+ * список упёрся в предел одного запроса и `total` — только нижняя оценка.
+ */
+data class ProblemsPage(
+    val shown: List<Problem>,
+    val total: Int,
+    val totalKnown: Boolean,
+)
+
 @Serializable
 data class Trigger(
     val triggerid: String = "",
