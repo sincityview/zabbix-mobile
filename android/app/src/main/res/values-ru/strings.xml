@@ -16,9 +16,9 @@
     <string name="error_invalid_number">Введите число</string>
     <string name="refresh_interval">Интервал обновления (сек)</string>
     <string name="refresh_interval_hint">От 10 до 3600 секунд</string>
-    <string name="sort_title">Сортировка</string>
-    <string name="sort_default">По умолчанию</string>
-    <string name="sort_by_severity">По важности</string>
+    <string name="filter_title">Показывать</string>
+    <string name="filter_all">По умолчанию</string>
+    <string name="no_problems_of_severity">Проблем этой важности нет</string>
     <string name="self_signed">Самоподписанный сертификат</string>
     <string name="save">Сохранить</string>
     <string name="cancel">Отмена</string>

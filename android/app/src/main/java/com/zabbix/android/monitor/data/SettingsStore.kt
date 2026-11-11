@@ -70,12 +70,12 @@ class SettingsStore(context: Context) {
             .apply()
     }
 
-    /** Порядок проблем в списке — отдельный ключ, остальных настроек не касается. */
-    fun loadSort(): ProblemSort =
-        ProblemSort.fromName(prefs.getString(KEY_SORT, null))
+    /** Фильтр показа по важности — отдельный ключ, остальных настроек не касается. */
+    fun loadFilter(): ProblemFilter =
+        ProblemFilter.fromName(prefs.getString(KEY_FILTER, null))
 
-    fun saveSort(sort: ProblemSort) {
-        prefs.edit().putString(KEY_SORT, sort.name).apply()
+    fun saveFilter(filter: ProblemFilter) {
+        prefs.edit().putString(KEY_FILTER, filter.name).apply()
     }
 
     fun clear() {
@@ -89,6 +89,6 @@ class SettingsStore(context: Context) {
         const val KEY_INSECURE_TLS = "insecure_tls"
         const val KEY_LIMIT = "limit"
         const val KEY_INTERVAL = "interval_seconds"
-        const val KEY_SORT = "sort"
+        const val KEY_FILTER = "severity_filter"
     }
 }

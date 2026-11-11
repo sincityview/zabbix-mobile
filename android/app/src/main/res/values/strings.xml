@@ -16,9 +16,9 @@
     <string name="error_invalid_number">Enter a number</string>
     <string name="refresh_interval">Refresh interval (sec)</string>
     <string name="refresh_interval_hint">10 to 3600 seconds</string>
-    <string name="sort_title">Sort</string>
-    <string name="sort_default">Default</string>
-    <string name="sort_by_severity">By severity</string>
+    <string name="filter_title">Show</string>
+    <string name="filter_all">Default</string>
+    <string name="no_problems_of_severity">No problems of this severity</string>
     <string name="self_signed">Self-signed certificate</string>
     <string name="save">Save</string>
     <string name="cancel">Cancel</string>

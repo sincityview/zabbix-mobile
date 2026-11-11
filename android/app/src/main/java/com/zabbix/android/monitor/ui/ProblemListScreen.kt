@@ -53,9 +53,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.zabbix.android.monitor.R
 import com.zabbix.android.monitor.data.MonitorSettings
 import com.zabbix.android.monitor.data.Problem
-import com.zabbix.android.monitor.data.ProblemSort
+import com.zabbix.android.monitor.data.ProblemFilter
 import com.zabbix.android.monitor.data.ProblemsPage
-import com.zabbix.android.monitor.data.sortProblems
+import com.zabbix.android.monitor.data.filterProblems
 import com.zabbix.android.monitor.data.ZabbixApi
 import com.zabbix.android.monitor.data.ZabbixTime
 import kotlinx.coroutines.CancellationException
@@ -117,20 +117,23 @@ private class ProblemListState(private val settings: MonitorSettings) {
 @Composable
 fun ProblemListScreen(
     settings: MonitorSettings,
-    sort: ProblemSort,
-    onSortChange: (ProblemSort) -> Unit,
+    filter: ProblemFilter,
+    onFilterChange: (ProblemFilter) -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     val state = remember(settings) { ProblemListState(settings) }
     val scope = rememberCoroutineScope()
     val lifecycleOwner = LocalLifecycleOwner.current
     var selected by remember { mutableStateOf<Problem?>(null) }
-    var sortMenuOpen by remember { mutableStateOf(false) }
+    var filterMenuOpen by remember { mutableStateOf(false) }
 
     val refresh: () -> Unit = { scope.launch { state.refresh(userInitiated = true) } }
 
-    val visible = remember(state.page, sort, settings.safeLimit()) {
-        sortProblems(state.problems, sort).take(settings.safeLimit())
+    // Сначала фильтр по важности, потом лимит показа — иначе «показано/всего»
+    // считалось бы по неотфильтрованному списку.
+    val matching = remember(state.page, filter) { filterProblems(state.problems, filter) }
+    val visible = remember(matching, settings.safeLimit()) {
+        matching.take(settings.safeLimit())
     }
 
     // Первый запрос при входе на экран.
@@ -153,30 +156,30 @@ fun ProblemListScreen(
                 title = {
                     Box {
                         Text(
-                            text = problemsTitle(state),
+                            text = problemsTitle(state, matching.size),
                             modifier = Modifier
-                                .clickable { sortMenuOpen = true }
+                                .clickable { filterMenuOpen = true }
                                 .padding(vertical = 8.dp),
                         )
                         DropdownMenu(
-                            expanded = sortMenuOpen,
-                            onDismissRequest = { sortMenuOpen = false },
+                            expanded = filterMenuOpen,
+                            onDismissRequest = { filterMenuOpen = false },
                         ) {
                             Text(
-                                text = stringResource(R.string.sort_title),
+                                text = stringResource(R.string.filter_title),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                             )
-                            sortOptions().forEach { (option, label) ->
+                            filterOptions().forEach { (option, label) ->
                                 DropdownMenuItem(
                                     text = { Text(label) },
                                     onClick = {
-                                        onSortChange(option)
-                                        sortMenuOpen = false
+                                        onFilterChange(option)
+                                        filterMenuOpen = false
                                     },
                                     trailingIcon = {
-                                        if (option == sort) {
+                                        if (option == filter) {
                                             Icon(
                                                 imageVector = Icons.Filled.Check,
                                                 contentDescription = null,
@@ -223,6 +226,15 @@ fun ProblemListScreen(
                     )
                 }
 
+                matching.isEmpty() && filter != ProblemFilter.All -> {
+                    // проблемы есть, но ни одной выбранной важности
+                    MessagePane(
+                        message = stringResource(R.string.no_problems_of_severity),
+                        actionText = stringResource(R.string.filter_all),
+                        onAction = { onFilterChange(ProblemFilter.All) },
+                    )
+                }
+
                 visible.isEmpty() -> {
                     MessagePane(
                         message = stringResource(R.string.all_good),
@@ -254,24 +266,27 @@ fun ProblemListScreen(
  * Счётчик в шапке: «показано / всего», без слов. Плюс означает, что проблем
  * на сервере больше, чем мы просматриваем за один опрос.
  */
-private fun problemsTitle(state: ProblemListState): String {
+/**
+ * Счётчик в шапке: «показано / сколько подходит под фильтр». Плюс означает,
+ * что проблем на сервере больше, чем просматривается за один опрос.
+ */
+private fun problemsTitle(state: ProblemListState, matching: Int): String {
     val page = state.page ?: return if (state.loading) "…" else "—"
     val plus = if (page.totalKnown) "" else "+"
-    val shown = minOf(page.total, state.shownLimit)
-    return "$shown/${page.total}$plus"
+    val shown = minOf(matching, state.shownLimit)
+    return "$shown/$matching$plus"
 }
 
-/** Пункты меню сортировки: подпись берём из ресурсов. */
+/** Пункты меню показа: «по умолчанию» и уровни важности. */
 @Composable
-private fun sortOptions(): List<Pair<ProblemSort, String>> = listOf(
-    ProblemSort.Default to stringResource(R.string.sort_default),
-    ProblemSort.BySeverity to stringResource(R.string.sort_by_severity),
-    ProblemSort.Disaster to stringResource(R.string.severity_5),
-    ProblemSort.High to stringResource(R.string.severity_4),
-    ProblemSort.Average to stringResource(R.string.severity_3),
-    ProblemSort.Warning to stringResource(R.string.severity_2),
-    ProblemSort.Information to stringResource(R.string.severity_1),
-    ProblemSort.NotClassified to stringResource(R.string.severity_0),
+private fun filterOptions(): List<Pair<ProblemFilter, String>> = listOf(
+    ProblemFilter.All to stringResource(R.string.filter_all),
+    ProblemFilter.Disaster to stringResource(R.string.severity_5),
+    ProblemFilter.High to stringResource(R.string.severity_4),
+    ProblemFilter.Average to stringResource(R.string.severity_3),
+    ProblemFilter.Warning to stringResource(R.string.severity_2),
+    ProblemFilter.Information to stringResource(R.string.severity_1),
+    ProblemFilter.NotClassified to stringResource(R.string.severity_0),
 )
 
 @Composable
